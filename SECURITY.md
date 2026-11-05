@@ -1,0 +1,28 @@
+# Security model and limitations
+
+## Boundaries
+
+1. **Identity:** GitHub App authorization uses a random expiring OAuth state bound to an HTTP-only SameSite cookie and PKCE. User tokens are encrypted with Fernet before storage. Session IDs are random, hashed in the database, expire after eight hours, and are invalidated on logout. Mutation requests require both the configured origin and the session CSRF token.
+2. **Authorization:** Every repository, scan, comparison, report and review is scoped to its owner. GitHub authorization is checked at import and again when a snapshot is downloaded. Users cannot submit arbitrary clone URLs. The MVP is single-user-per-repository ownership, not organization RBAC.
+3. **Intake:** ZIP handling rejects path traversal, links/special files, encrypted entries, duplicates, excessive sizes and counts. Source is never extracted with an unrestricted archive extraction API. GitHub redirects are allowlisted to `codeload.github.com` and no bearer token is forwarded to that host.
+4. **Execution:** Untrusted source is parsed only in an ephemeral Docker container with no network, no capabilities, read-only root and source, non-root UID, bounded PIDs/CPU/memory/output/time, and a small noexec tmpfs. Only application-owned rules are used; repository suppression comments are ignored. No repository dependencies or scripts run anywhere.
+5. **Secrets:** Pattern detection runs on source and recursively redacts normalized findings, source views, notes and model outputs. Raw output is never logged. Uploaded source is encrypted before entering Redis. Raw files are transient; only redacted source is persisted. The fixture's credential is synthetic. Unknown formats, split/encoded values and credentials without recognizable patterns may be missed. Operators must assess this before enabling LLM egress.
+6. **AI:** Retrieval uses a small trusted CWE corpus, exact CWE ranking and lexical similarity. Only a small redacted source excerpt is sent, on explicit request. Source and analyzer messages are JSON data in a separate user message; trusted instructions and guidance are system context. The response schema rejects extra fields and unknown citations. Classification is supplied by the application, never the model. Models have no tools. Prompt injection cannot be ruled out semantically, so model text is never used as authority or to execute actions.
+7. **Patches:** Narrow templates produce suggestions for supported rules. Files with known redactions are excluded. Diffs are labeled untested, behavior changes are stated, and export requires acknowledgment plus a digest bound to the current diff. There is no API for repository mutation or merging.
+8. **GitHub checks:** HMAC-SHA256 signatures and delivery IDs protect webhooks. Only registered repository/installations and same-repository PR heads are eligible. Checks need opt-in and a separate installation token with only contents read/checks write. High findings produce `action_required`; partial scans produce `neutral`, never success. Branch protection remains a repository administrator choice.
+
+## Production operating requirements
+
+- Use a **dedicated worker host**, preferably a rootless Docker daemon. Docker daemon access is a privileged orchestration capability: never mount its socket in the web/API service or expose it over the network. Docker process isolation shares the host kernel; stronger hostile multi-tenant isolation calls for a microVM/gVisor-class boundary and operational validation.
+- Set `ENVIRONMENT=production`, HTTPS `PUBLIC_URL`, strong generated keys, PostgreSQL, and asynchronous Docker scanning. The application refuses unsafe development toggles in production.
+- Keep PostgreSQL and Redis on private networks, apply authentication/TLS when services cross hosts, encrypt disks/backups, and restrict database access to API/worker identities. Redis in Compose is private and ephemeral; pending jobs can be lost on restart. Maintenance marks abandoned scans failed.
+- Put a TLS reverse proxy and ingress rate limits in front of the API. Authenticated write and LLM calls also use Redis-backed application limits. Shared deployment IPs can share the unauthenticated OAuth limit; tune trusted ingress policy for your environment.
+- Disable request/body tracing and parameter logging at proxies, APM tools and LLM gateways. Do not record webhook bodies, OAuth codes, source, headers or signed archive URLs.
+- Schedule `scripts/maintenance.py`. Clean leftover `cg-scan-*` staging directories older than the maximum job time after worker crashes. Do not delete active jobs. Maintain a repository/source retention policy; automated per-tenant retention/deletion UI is not in this MVP.
+- Monitor queue health and stale jobs; a failed or partial scan must never be treated as a clean security result. Confirm configured analyzers and rule versions before comparing results. Upgrade pinned dependencies regularly and run tests before rollout.
+- GitHub user access tokens are not automatically refreshed; reconnect after expiration or revocation. Secrets should be supplied by the host's secret manager, never frontend environment variables.
+- The frontend CSP permits inline scripts for Next.js bootstrap and inline styles for Monaco. Scripts, workers, fonts and connections otherwise remain same-origin. A stricter nonce-based policy is a future hardening step.
+
+## Disclosure
+
+Do not put credentials or private source in a public issue. Use the repository's private vulnerability reporting mechanism when enabled; otherwise contact the repository owner privately before sharing reproduction material. This repository does not claim an externally audited security status.

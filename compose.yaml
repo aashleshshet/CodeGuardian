@@ -1,0 +1,81 @@
+name: codeguardian
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: guardian
+      POSTGRES_DB: guardian
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    volumes: ["postgres_data:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U guardian"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+    networks: [services]
+  redis:
+    image: redis:7.4-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "256mb", "--maxmemory-policy", "noeviction"]
+    restart: unless-stopped
+    networks: [services]
+  migrate:
+    build: {context: ., dockerfile: backend/Dockerfile, target: api}
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://guardian:${POSTGRES_PASSWORD}@postgres:5432/guardian
+    command: ["alembic", "-c", "backend/alembic.ini", "upgrade", "head"]
+    depends_on:
+      postgres: {condition: service_healthy}
+    networks: [services]
+  api:
+    build: {context: ., dockerfile: backend/Dockerfile, target: api}
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://guardian:${POSTGRES_PASSWORD}@postgres:5432/guardian
+      REDIS_URL: redis://redis:6379/0
+      SCANNER_MODE: docker
+      TASKS_EAGER: "false"
+    ports: ["127.0.0.1:8000:8000"]
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+      redis: {condition: service_started}
+    read_only: true
+    tmpfs: ["/tmp:size=64m,mode=1777"]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 768m
+    cpus: 1
+    pids_limit: 128
+    restart: unless-stopped
+    networks: [services, egress]
+  worker:
+    build: {context: ., dockerfile: backend/Dockerfile, target: worker}
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://guardian:${POSTGRES_PASSWORD}@postgres:5432/guardian
+      REDIS_URL: redis://redis:6379/0
+      SCANNER_MODE: docker
+      SCAN_ROOT: ${SCANNER_JOBS_DIR:?Set absolute SCANNER_JOBS_DIR}
+      TASKS_EAGER: "false"
+    user: "${WORKER_UID:-1000}:${DOCKER_GID:-1000}"
+    volumes:
+      - ${DOCKER_SOCKET:-/var/run/docker.sock}:/var/run/docker.sock
+      - ${SCANNER_JOBS_DIR}:${SCANNER_JOBS_DIR}
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+      redis: {condition: service_started}
+    read_only: true
+    tmpfs: ["/tmp:size=128m,mode=1777"]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 1g
+    cpus: 2
+    pids_limit: 128
+    restart: unless-stopped
+    networks: [services, egress]
+networks:
+  services: {internal: true}
+  egress: {}
+volumes:
+  postgres_data:

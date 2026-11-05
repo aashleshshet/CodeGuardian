@@ -1,0 +1,14 @@
+.venv
+.cache
+backend
+fixtures
+scripts
+tests
+test-results
+playwright-report
+.impeccable
+.taste-skill
+docs
+*.db*
+data
+.env*

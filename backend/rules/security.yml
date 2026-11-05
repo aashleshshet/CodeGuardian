@@ -1,0 +1,71 @@
+rules:
+  - id: javascript-eval
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: Dynamic evaluation can execute attacker-controlled JavaScript. Avoid eval and parse structured data instead.
+    patterns:
+      - pattern-either:
+          - pattern: eval($INPUT)
+          - pattern: new Function(...)
+    metadata:
+      cwe: CWE-95
+      owasp: A03:2021 – Injection
+      confidence: HIGH
+  - id: javascript-command-execution
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: A shell command includes request-controlled data. Use a fixed executable and validated argument list.
+    mode: taint
+    pattern-sources:
+      - pattern: $REQ.query.$FIELD
+      - pattern: $REQ.body.$FIELD
+      - pattern: $REQ.params.$FIELD
+    pattern-sinks:
+      - pattern: exec($CMD, ...)
+      - pattern: execSync($CMD, ...)
+    metadata:
+      cwe: CWE-78
+      owasp: A03:2021 – Injection
+      confidence: HIGH
+  - id: javascript-sql-injection
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: Request-controlled data reaches a SQL query. Bind values with the database driver's parameter API.
+    mode: taint
+    pattern-sources:
+      - pattern: $REQ.query.$FIELD
+      - pattern: $REQ.body.$FIELD
+      - pattern: $REQ.params.$FIELD
+    pattern-sinks:
+      - pattern: $DB.query($SQL, ...)
+    metadata:
+      cwe: CWE-89
+      owasp: A03:2021 – Injection
+      confidence: HIGH
+  - id: javascript-html-injection
+    languages: [javascript, typescript]
+    severity: WARNING
+    message: HTML is assigned directly to a DOM element. Prefer textContent for untrusted text.
+    pattern: $EL.innerHTML = $INPUT
+    metadata:
+      cwe: CWE-79
+      owasp: A03:2021 – Injection
+      confidence: MEDIUM
+  - id: javascript-tls-disabled
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: TLS certificate verification is disabled. Restore verification and configure trusted CAs.
+    pattern: "{..., rejectUnauthorized: false, ...}"
+    metadata:
+      cwe: CWE-295
+      owasp: A02:2021 – Cryptographic Failures
+      confidence: HIGH
+  - id: python-unsafe-yaml
+    languages: [python]
+    severity: ERROR
+    message: Unsafe YAML loading may construct arbitrary Python objects. Use yaml.safe_load for untrusted input.
+    pattern: yaml.load($DATA, Loader=yaml.Loader)
+    metadata:
+      cwe: CWE-502
+      owasp: A08:2021 – Software and Data Integrity Failures
+      confidence: HIGH

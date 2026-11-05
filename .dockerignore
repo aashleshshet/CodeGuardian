@@ -1,0 +1,13 @@
+.git
+.venv
+node_modules
+.next
+.env*
+.vercel
+.cache
+*.db*
+data
+.impeccable
+.taste-skill
+test-results
+playwright-report

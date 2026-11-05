@@ -1,0 +1,11 @@
+export type Severity = "critical" | "high" | "medium" | "low" | "info";
+export type Finding = {fingerprint: string; path: string; line: number; end_line: number; rule_id: string; title: string; message: string; severity: Severity; confidence: string; cwe: string; owasp: string; engine: string; classification: string; snippet: string; status: string; review_note?: string};
+export type Coverage = {files: number; languages: string[]; engines: {name: string; status: string}[]; complete: boolean; errors: string[]; rule_version: string};
+export type Scan = {id: string; repository_id: string; commit_sha: string; status: string; created_at: string; completed_at: string; findings: Finding[]; files: Record<string, string>; summary: Record<Severity, number>; coverage: Coverage; error?: string; comparison?: Comparison};
+export type Repository = {id: string; full_name: string; branch: string; is_fixture: boolean; scans?: Scan[]};
+export type Comparison = {new: string[]; resolved: string[]; unchanged: string[]; baseline_commit: string; reliable: boolean};
+export type Explanation = {provider: string; explanation: string; conditions_to_verify: string[]; remediation: string; tests: string[]; citations: {id: string; title: string; url: string; guidance: string}[]; limitations: string; model?: string};
+export type Patch = {path: string; original: string; modified: string; diff: string; digest: string; caveat: string; requires_human_review: boolean; tested: boolean; origin: string};
+export type Demo = {mode: "fixture"; repository: Repository; scan: Scan; history: Omit<Scan, "files" | "findings">[]; comparison: Comparison; explanations: Record<string, Explanation>; patches: Record<string, Patch>; provenance: {generated_at: string; semgrep: string; bandit: string}};
+export const severityOrder: Severity[] = ["critical", "high", "medium", "low", "info"];
+export const classificationLabel = (f: Finding) => f.classification === "verified_analyzer" ? "Analyzer evidence" : "Potential vulnerability";
