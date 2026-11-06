@@ -1,6 +1,7 @@
 .venv
 .cache
-backend
+# Exclude the Python service, but retain app/api/backend (the Next.js proxy).
+/backend/
 fixtures
 scripts
 tests
