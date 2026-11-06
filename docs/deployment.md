@@ -4,7 +4,7 @@ The frontend is hosted on Vercel. API, PostgreSQL, Redis, scheduler and scanner 
 
 ## 1. Prepare a dedicated scanner host
 
-Use a host with Docker/Compose, outbound HTTPS for GitHub and trusted database updates, and capacity for two 3 GiB scanner containers plus the application services. Keep PostgreSQL and Redis on the internal Compose network. Put the API behind an HTTPS reverse proxy; it binds to `127.0.0.1:8000` by default.
+Use a host with Docker/Compose, outbound HTTPS for GitHub and trusted database updates, and capacity for two 3 GiB scanner containers plus the application services. A 16 GiB machine is a reasonable starting point for the default two concurrent scans; an 8 GiB machine should use `WORKER_CONCURRENCY=1`. These are sizing estimates, not load-test guarantees; local model inference needs additional resources. Keep PostgreSQL and Redis on the internal Compose network. Put the API behind an HTTPS reverse proxy; it binds to `127.0.0.1:8000` by default.
 
 The worker controls a Docker daemon. Isolate this authority from other workloads. A dedicated rootless Docker daemon is preferred; set its socket path and UID/GID explicitly. Rootful Docker also works but grants the worker host-level Docker authority. The API never receives the Docker socket.
 
@@ -17,7 +17,7 @@ Install the Python dependencies first if `cryptography` is unavailable. Store th
 
 ```dotenv
 ENVIRONMENT=production
-PUBLIC_URL=https://codeguardian-ai-rho.vercel.app
+PUBLIC_URL=https://codeguardianxweb.vercel.app
 POSTGRES_PASSWORD=<generated-url-safe-password>
 TOKEN_ENCRYPTION_KEY=<fernet-key>
 SCANNER_MODE=docker
@@ -25,6 +25,7 @@ TASKS_EAGER=false
 SCANNER_JOBS_DIR=/srv/codeguardian/jobs
 SCANNER_CACHE_DIR=/srv/codeguardian/scanner-data
 WORKER_UID=1000
+WORKER_CONCURRENCY=2
 DOCKER_GID=<socket-group-id>
 DOCKER_SOCKET=<dedicated-daemon-socket-path>
 ```
@@ -35,8 +36,8 @@ Create both absolute directories and give the worker UID write access to `jobs` 
 
 Use the deployed frontend URL as the homepage. Configure:
 
-- Callback: `https://codeguardian-ai-rho.vercel.app/api/backend/auth/github/callback`
-- Setup URL: `https://codeguardian-ai-rho.vercel.app/#integrations`
+- Callback: `https://codeguardianxweb.vercel.app/api/backend/auth/github/callback`
+- Setup URL: `https://codeguardianxweb.vercel.app/#integrations`
 - Webhook: `https://YOUR-API-HOST/webhooks/github` (or the frontend BFF path `/api/backend/webhooks/github`)
 - Enable expiring user access tokens. Configure user authorization during installation if desired.
 - Repository permissions: **Contents: read**, **Metadata: read**, **Pull requests: read** for PR event context. **Checks: write** is optional and only needed when publishing checks.
@@ -75,9 +76,13 @@ Import `aashleshshet/CodeGuardian`, framework Next.js, root directory `.`, insta
 API_URL=https://YOUR-API-HOST
 ```
 
-Redeploy after changing this value because the page’s backend-configured state is built into the deployment. Never use a `NEXT_PUBLIC_` variable for credentials. GitHub App credentials belong on the backend, not in browser bundles. `PUBLIC_URL` must match the production frontend exactly so CSRF origin checks and secure cookies work. Configure preview deployments separately; do not casually share production sessions or secrets with arbitrary previews.
+Redeploy after changing Vercel environment variables so the new deployment receives them. The page now reads backend configuration at request time, which also supports runtime configuration in self-hosted containers. Never use a `NEXT_PUBLIC_` variable for credentials. GitHub App credentials belong on the backend, not in browser bundles. `PUBLIC_URL` must be `https://codeguardianxweb.vercel.app` so callbacks, CSRF origin checks and secure cookies use the current production frontend. Configure preview deployments separately; do not casually share production sessions or secrets with arbitrary previews.
 
 Without `API_URL`, the website intentionally shows setup information and no sample data. This is not a backend outage simulation or a working account.
+
+The sign-in button requires both GitHub configuration and a successful `/ready` response. Readiness checks database connectivity, the current Alembic schema, Redis, and a recent worker heartbeat. A reachable API or a filled credential field alone does not establish a working service. Existing authenticated users can still review retained results during a worker outage.
+
+For this project's existing Vercel deployment, configure `API_URL` under **codeguardian-ai → Settings → Environment Variables → Production**. Use the HTTPS origin of the actual backend, with no `/api/backend` suffix. The canonical frontend URL and callback are already shown above; do not create a second Vercel project or enter a placeholder API URL to remove the setup message.
 
 ## 5. Optional local AI
 

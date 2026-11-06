@@ -11,10 +11,9 @@ from fastapi import FastAPI, Depends, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 from pydantic import BaseModel, Field
-from sqlalchemy import text
 from sqlmodel import Session, SQLModel, select
 from .config import settings
-from .models import engine, get_db, User, OAuthState, AIAnalysis, Review, FindingRecord, WorkerHealth, now
+from .models import engine, get_db, User, OAuthState, AIAnalysis, Review, FindingRecord, now
 from .auth import current_user, make_session, digest
 from .access import retained_source, owned_scan, finding_for, scan_view
 from .jobs import audit
@@ -24,6 +23,7 @@ from .ai import explain, propose_patch
 from . import github
 from .middleware import BodyLimitMiddleware
 from .limits import check_limit
+from .readiness import readiness_checks
 
 logger = logging.getLogger("codeguardian")
 
@@ -64,14 +64,7 @@ def health(): return {"status": "ok", "service": "codeguardian-api"}
 
 @app.get("/ready")
 def ready(db: Session = Depends(get_db)):
-    from redis import Redis
-    checks = {"database": False, "queue": False, "worker": False}
-    try:
-        db.exec(text("SELECT 1")); checks["database"] = True
-        checks["queue"] = bool(Redis.from_url(settings().redis_url, socket_timeout=2, socket_connect_timeout=2).ping())
-        worker = db.get(WorkerHealth, "celery")
-        checks["worker"] = bool(worker and worker.heartbeat_at.replace(tzinfo=timezone.utc) > now()-timedelta(seconds=120))
-    except Exception: pass
+    checks = readiness_checks(db)
     return JSONResponse({"status": "ready" if all(checks.values()) else "unavailable", "checks": checks}, status_code=200 if all(checks.values()) else 503)
 
 

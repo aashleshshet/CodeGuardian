@@ -6,6 +6,24 @@ test("public landing is honest, responsive, and respects reduced motion",async({
  await page.getByRole("button",{name:"Switch to light theme"}).click();await expect(page.locator("html")).toHaveAttribute("data-theme","light");await page.screenshot({path:".cache/screenshots/welcome-light.png",fullPage:true,animations:"disabled"});
  await page.setViewportSize({width:390,height:844});await page.emulateMedia({reducedMotion:"reduce"});await expect(page.getByRole("heading",{name:"See the risk. Own the fix."})).toBeVisible();expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();expect(await page.locator(".signin-panel").evaluate(el=>getComputedStyle(el).animationName)).toBe("none");await page.screenshot({path:".cache/screenshots/welcome-mobile.png",fullPage:true,animations:"disabled"});
 });
+test("GitHub sign-in requires healthy services and clears stale configuration on retry",async({page})=>{
+ let ready=false;
+ let credentials=true;
+ await page.route("**/api/backend/capabilities",route=>route.fulfill({json:{github:credentials,llm:false,checks:false,repository_writes:false,scanner_mode:"docker"}}));
+ await page.route("**/api/backend/ready",route=>route.fulfill({status:ready?200:503,json:{status:ready?"ready":"unavailable"}}));
+ await page.goto("/");
+ const signIn=page.getByRole("link",{name:"Continue with GitHub"});
+ await expect(page.getByText("The review service is not ready. Please try again shortly.",{exact:true})).toBeVisible();
+ await expect(signIn).toHaveCount(0);
+ ready=true;credentials=false;
+ await page.getByRole("button",{name:"Check again"}).click();
+ await expect(page.getByText("The service administrator needs to finish GitHub App configuration before you can sign in.",{exact:true})).toBeVisible();
+ await expect(signIn).toHaveCount(0);
+ credentials=true;
+ await page.getByRole("button",{name:"Check again"}).click();
+ await expect(signIn).toBeVisible();
+ await expect(signIn).toHaveAttribute("href","/api/backend/auth/github/start");
+});
 test("new account has empty real data and usable settings",async({page})=>{
  await signIn(page);await expect(page.getByRole("heading",{name:"A clearer picture starts with your repository."})).toBeVisible();await page.screenshot({path:".cache/screenshots/workspace-empty.png",fullPage:true,animations:"disabled"});
  await page.getByRole("button",{name:"Connect your first repository"}).click();await expect(page.getByRole("heading",{name:"Connected on your terms"})).toBeVisible();await expect(page.getByRole("button",{name:"Sync repositories"})).toBeDisabled();await expect(page.getByRole("button",{name:"Upload and scan"})).toBeDisabled();

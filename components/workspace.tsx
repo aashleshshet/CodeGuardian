@@ -30,7 +30,29 @@ export default function Workspace({backendConfigured}:{backendConfigured:boolean
   const notify=useCallback((message:string,error=false)=>setToast({message,error}),[]);
   const fail=useCallback((error:unknown)=>{if(error instanceof ApiError && error.status===401){setUser(null);setAuthError("Your session expired. Sign in again to continue.");}notify(error instanceof Error ? error.message : "Something went wrong. Please retry.",true);},[notify]);
   const refresh=useCallback(async()=>{try{const [r,d]=await Promise.all([api<Repository[]>("/repositories?limit=100"),api<Dashboard>("/dashboard")]);setRepos(r);setDashboard(d);setDataError("");setRepoId(current=>current && r.some(x=>x.id===current)?current:r[0]?.id || "");return r;}catch(e){setDataError(e instanceof Error?e.message:"Unable to load workspace");throw e;}},[]);
-  const bootstrap=useCallback(async()=>{if(!backendConfigured)return;setLoading(true);setAuthError("");const result=await Promise.allSettled([api<Capabilities>("/capabilities"),api<Identity>("/auth/me")]);if(result[0].status==="fulfilled")setCaps(result[0].value);else setAuthError("The review service is unavailable. Try again shortly.");if(result[1].status==="fulfilled"){setUser(result[1].value);try{await refresh();}catch{}}else if(!(result[1].reason instanceof ApiError && result[1].reason.status===401))setAuthError("The review service is unavailable. Try again shortly.");setLoading(false);},[backendConfigured,refresh]);
+  const bootstrap=useCallback(async()=>{
+    if(!backendConfigured)return;
+    setLoading(true);setAuthError("");setCaps(null);
+    const options={signal:AbortSignal.timeout(10_000)};
+    const [capabilities,identity,readiness]=await Promise.allSettled([
+      api<Capabilities>("/capabilities",options),api<Identity>("/auth/me",options),
+      api<{status:string}>("/ready",options),
+    ]);
+    if(capabilities.status==="fulfilled")setCaps(capabilities.value);
+    if(capabilities.status==="rejected" || readiness.status==="rejected" || readiness.value.status!=="ready"){
+      setAuthError("The review service is not ready. Please try again shortly.");
+    }
+    if(identity.status==="fulfilled"){
+      setUser(identity.value);
+      try{await refresh();}catch{}
+    }else{
+      setUser(null);
+      if(!(identity.reason instanceof ApiError && identity.reason.status===401)){
+        setAuthError("The review service is unavailable. Try again shortly.");
+      }
+    }
+    setLoading(false);
+  },[backendConfigured,refresh]);
   useEffect(()=>{setTheme(document.documentElement.dataset.theme || "dark");const route=location.hash.slice(1);if(route in TITLES)setView(route as View);void bootstrap();},[bootstrap]);
   useEffect(()=>{if(!toast)return;const t=setTimeout(()=>setToast(null),7000);return()=>clearTimeout(t);},[toast]);
   useEffect(()=>{if(!user)return;let alive=true;Promise.all([api<Preferences>("/preferences"),api<{notifications:Notification[]}>("/notifications")]).then(([p,n])=>{if(alive){setPreferences(p);setNotifications(n.notifications);}}).catch(fail);return()=>{alive=false;};},[user,fail]);

@@ -4,7 +4,7 @@
 
 CodeGuardian analyzes authorized Python, JavaScript, and TypeScript repositories with real security tools. It keeps analyzer evidence separate from potential vulnerabilities and optional AI guidance. Suggested changes remain reviewable, untested patches that a human must approve before exporting.
 
-[Website](https://codeguardian-ai-rho.vercel.app) · [Deployment](docs/deployment.md) · [Architecture](docs/architecture.md) · [Security model](SECURITY.md) · [Verification](docs/verification.md)
+[Website](https://codeguardianxweb.vercel.app) · [Deployment](docs/deployment.md) · [Architecture](docs/architecture.md) · [Security model](SECURITY.md) · [Verification](docs/verification.md)
 
 ![CodeGuardian sign-in and onboarding](docs/images/welcome.png)
 

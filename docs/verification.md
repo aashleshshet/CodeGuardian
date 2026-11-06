@@ -2,6 +2,8 @@
 
 Upgrade verification on 2026-11-06/07:
 
+Production connection follow-up on 2026-11-07: the existing `codeguardian-ai` Vercel project serves `https://codeguardianxweb.vercel.app`, but had no environment variables configured. Its API proxy returned 503 because `API_URL` was absent. No backend host or GitHub App credentials were supplied. The targeted follow-up reads frontend configuration at request time, gates sign-in on service readiness, adds migration-aware independent readiness probes and supports one-worker deployment on smaller hosts. Local checks pass: **50 backend tests**, including all five real analyzers; **4 browser scenarios**; TypeScript, production build and the bundled sanitizer check. These tests do not establish a connected production backend. A host is still being selected; no paid infrastructure was provisioned.
+
 | Check | Evidence |
 | --- | --- |
 | Python suite | 47 passing tests, including real analyzer processes, auth/lifecycle/security, cache throttling and migration preservation |
