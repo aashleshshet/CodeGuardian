@@ -100,7 +100,7 @@ This is a functioning MVP with production-oriented safeguards, not a claim of in
 
 Direct repository writes, automatic merging and in-app PR creation are disabled. Export a reviewed patch, test it locally and create a PR yourself. Fork PRs are skipped. The bundled rules do not cover every vulnerability or language framework. Trivy scans source/manifests/configuration; CodeGuardian does not build or execute submitted container images. UI lists expose the latest 100 repositories, 20 scans per repository and bounded branch/commit pages; API pagination supports further retrieval. Trend points are per-scan counts, not an aggregate security score.
 
-Optional advisory enrichment is bounded and best-effort. Secret detection cannot guarantee discovery of unknown, encoded or split credentials. Latest finding state is retained until repository/account deletion; historical scan retention does not erase the latest evidence. Source normally expires after 24 hours. See [SECURITY.md](SECURITY.md) for the complete boundaries.
+Optional advisory enrichment is bounded and best-effort. Secret detection cannot guarantee discovery of unknown, encoded or split credentials. Semgrep-pinned MCP/OpenTelemetry advisories remain confined to the isolated scanner image; see the dependency review in SECURITY.md. Latest finding state is retained until repository/account deletion; historical scan retention does not erase the latest evidence. Source normally expires after 24 hours. See [SECURITY.md](SECURITY.md) for the complete boundaries.
 
 ## Source map
 

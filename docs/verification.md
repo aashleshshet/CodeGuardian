@@ -1,6 +1,6 @@
 # Verification record
 
-Local upgrade verification on 2026-11-06:
+Upgrade verification on 2026-11-06/07:
 
 | Check | Evidence |
 | --- | --- |
@@ -8,10 +8,11 @@ Local upgrade verification on 2026-11-06:
 | Real analyzers | Semgrep, Bandit, Gitleaks 8.30.1, OSV-Scanner 2.7.0 and Trivy 0.76.2 all completed on the owned vulnerable fixture; secret-value absence asserted |
 | Offline data | Official npm/PyPI OSV databases and Trivy databases/checks downloaded administratively; manifest records hashes and update time |
 | Browser suite | Three end-to-end scenarios passed: honest landing/theme/mobile/reduced-motion; empty account/settings; real persisted evidence/Monaco/triage/human patch gate/report download |
-| Migration | Fresh SQLite migration plus populated 001→002 test preserves imported evidence and removes explicitly marked fixtures |
+| Migration | Fresh SQLite and PostgreSQL migrations pass; populated SQLite 001→002 test preserves imported evidence and removes explicitly marked fixtures |
+| Docker isolation | GitHub Actions ran all five analyzers using the actual network-disabled, resource-limited scanner command successfully |
 | Visual review | Captured dark/light landing, real-data workspace, source/diff review and mobile layouts; images inspected directly |
 
-The GitHub Actions workflow additionally exercises PostgreSQL migrations and all scanners inside the actual offline Docker isolation command, then creates a CodeGuardian self-review artifact. Consult the run for this commit for the current CI result. Self-review artifacts surface findings for review and do not certify vulnerability-free dependencies.
+The initial upgrade CI run passed PostgreSQL, all application tests and the offline Docker fixture scan. Its self-review uncovered JSX parser warnings and dependency advisories; the follow-up escapes JSX text, patches the bundled sanitizer and separates scanner-only dependencies from the API image. The workflow creates a CodeGuardian self-review artifact. Consult the run for this commit for the current CI result. Self-review artifacts surface findings for review and do not certify vulnerability-free dependencies.
 
 Docker is unavailable on the local workstation; local exact-fixture execution is test-only and does not establish container isolation. A live backend host has not been selected. No production GitHub App credentials, private-repository authorization or local/remote model endpoint was supplied. Those live paths require the activation smoke tests in [deployment.md](deployment.md). Mocked GitHub/model tests validate application contracts, not external service configuration.
 

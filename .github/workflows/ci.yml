@@ -39,10 +39,14 @@ jobs:
       - name: Test auth, lifecycle, migrations and five real scanners
         run: RUN_ALL_SCANNERS=true SCANNER_CACHE="$PWD/.cache/scanner-data" pytest backend/tests -q
       - name: Typecheck and production build
-        run: pnpm typecheck && pnpm build
+        run: pnpm typecheck && pnpm build && python scripts/check_frontend_bundle.py
       - run: pnpm exec playwright install --with-deps chromium
       - name: Test browser and real persisted review flow
         run: pnpm test:e2e
+      - name: Verify lean API image excludes scanner-only dependencies
+        run: |
+          docker build -f backend/Dockerfile --target api -t codeguardian-api:local .
+          docker run --rm --network=none --entrypoint python codeguardian-api:local -c "import app.main; import importlib.util; assert importlib.util.find_spec('mcp') is None; assert importlib.util.find_spec('semgrep') is None"
       - name: Verify all analyzers in the offline Docker sandbox
         run: |
           docker build -f backend/Dockerfile --target scanner -t codeguardian-scanner:local .

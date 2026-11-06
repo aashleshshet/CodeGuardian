@@ -81,7 +81,7 @@ export default function Review({scan, selected, select, theme, csrf, llm, notify
       <div className="code-footer"><span><span className={`status-dot ${selected.severity}`}/>Finding at line {selected.line}</span><span>Read-only snapshot <LockKeyhole size={12}/></span></div>
     </section>
     <aside className="explanation-panel" aria-label="Finding details">
-      <div className="detail-heading"><span className="section-icon"><ShieldCheck size={17}/>Evidence & guidance</span><span className="neutral-tag">{selected.rule_id}</span></div>
+      <div className="detail-heading"><span className="section-icon"><ShieldCheck size={17}/>Evidence &amp; guidance</span><span className="neutral-tag">{selected.rule_id}</span></div>
       <div className="detail-content"><div className="detail-title"><SeverityBadge severity={selected.severity}/><h2>{selected.title}</h2><EvidenceBadge finding={selected}/></div>
       <p className="detail-message">{explanation?.explanation || selected.message}</p>
       <dl className="evidence-facts"><div><dt>Analyzer</dt><dd>{selected.engine}</dd></div><div><dt>Confidence</dt><dd className="capitalize">{selected.confidence}</dd></div><div><dt>Weakness</dt><dd>{/^CWE-\d+$/.test(selected.cwe) ? <a href={`https://cwe.mitre.org/data/definitions/${selected.cwe.replace("CWE-", "")}.html`} target="_blank" rel="noreferrer">{selected.cwe} ↗</a> : selected.cwe}</dd></div><div><dt>OWASP</dt><dd>{selected.owasp}</dd></div></dl>

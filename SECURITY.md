@@ -18,3 +18,11 @@ CodeGuardian reviews authorized source. It is not a guarantee that code is secur
 Do not post credentials, private source or exploitation details in public issues. Use GitHub's private vulnerability reporting for this repository if enabled; otherwise contact the repository owner privately to arrange a secure report. Include a minimal synthetic reproducer and the affected version.
 
 The intentionally vulnerable `fixtures/` are test data and must never run as an application. Production images omit the test-only session harness. No production demo login or fixture endpoint exists.
+
+## Dependency review for the connected release
+
+The application self-scan identified advisories in Monaco's DOMPurify and Semgrep's pinned MCP/OpenTelemetry dependencies. The frontend pins DOMPurify 3.4.17, overrides the transitive package and replaces Monaco's separately vendored sanitizer import at build time. Source/diff rendering is covered by browser regression tests; the production bundle is checked for the replacement.
+
+Semgrep 1.183.0 and the inspected 1.184.0 release both constrain MCP 1.29.0 and OpenTelemetry 1.37.x. Forcing incompatible Python dependency versions is not treated as a verified fix. Those scanner dependencies remain a documented residual risk inside the network-disabled scanner image; CodeGuardian does not start Semgrep's MCP server or enable telemetry. API and worker images use the separate runtime requirements and exclude MCP, OpenTelemetry and Semgrep. Keep monitoring upstream compatible releases. The self-scan artifact retains these findings for review; a green functional workflow does not mean zero advisories.
+
+A Gitleaks match in README prose is a reviewed false positive (ordinary text around “secret redaction”), not an active credential. It is preserved in scan output rather than hidden with a repository suppression.

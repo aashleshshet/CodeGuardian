@@ -52,7 +52,7 @@ def normalize(f: dict, files: dict[str, str]) -> dict | None:
 
 def scan_directory(directory: Path) -> dict:
     files = {p.relative_to(directory).as_posix(): p.read_text() for p in directory.rglob("*") if p.is_file() and not p.is_symlink()}
-    results, engines, errors = [], [], []
+    results, engines, errors, diagnostics = [], [], [], []
     enabled = set(settings().enabled_scanners.lower().split(","))
     unknown = enabled - {"semgrep", "bandit", "gitleaks", "osv", "trivy"}
     if unknown: raise ValueError("Unknown configured analyzer")
@@ -108,6 +108,10 @@ def scan_directory(directory: Path) -> dict:
             payload = json.loads(raw)
             if payload.get("errors"):
                 errors.append(f"{name}: some files could not be analyzed")
+                for error in payload["errors"][:30]:
+                    kind = error.get("type", "parse_error")
+                    if isinstance(kind, list): kind = kind[0]
+                    diagnostics.append({"engine":name,"type":str(kind)[:100],"path":str(error.get("path", ""))[:300]})
             for item in payload.get("results", []):
                 if name == "Bandit":
                     cwe = str((item.get("issue_cwe") or {}).get("id", ""))
@@ -142,7 +146,7 @@ def scan_directory(directory: Path) -> dict:
             if ORDER[finding["severity"]] < ORDER[old["severity"]]: old["severity"] = finding["severity"]
         else: merged[finding["fingerprint"]] = finding
     findings = sorted(merged.values(), key=lambda f: (ORDER[f["severity"]], f["path"], f["line"]))
-    return mask({"findings": findings, "files": {p: redact(v) for p, v in files.items()}, "coverage": {"files": len(files), "languages": sorted({{ ".py": "Python", ".js": "JavaScript", ".jsx": "JavaScript", ".ts": "TypeScript", ".tsx": "TypeScript"}.get(Path(p).suffix, "Configuration") for p in files}), "engines": engines, "errors": errors, "complete": not errors, "rule_version": "2026.11.2", "configured_engines": sorted(enabled), "database_updated_at": database_updated_at, "scope": "Static source, supported lockfiles and configuration; no application builds or container image execution"}})
+    return mask({"findings": findings, "files": {p: redact(v) for p, v in files.items()}, "coverage": {"files": len(files), "languages": sorted({{ ".py": "Python", ".js": "JavaScript", ".jsx": "JavaScript", ".ts": "TypeScript", ".tsx": "TypeScript"}.get(Path(p).suffix, "Configuration") for p in files}), "engines": engines, "errors": errors, "complete": not errors, "rule_version": "2026.11.2", "diagnostics": diagnostics, "configured_engines": sorted(enabled), "database_updated_at": database_updated_at, "scope": "Static source, supported lockfiles and configuration; no application builds or container image execution"}})
 
 
 def summary(findings: list[dict]) -> dict:

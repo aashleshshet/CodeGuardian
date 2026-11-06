@@ -3,6 +3,15 @@ const config: NextConfig = {
   output: "standalone",
   poweredByHeader: false,
   devIndicators: false,
+  webpack(config, {webpack}) {
+    // Monaco vendors an older sanitizer independently of its package dependency.
+    // Replace that vendored import too, so the shipped editor uses the patched version.
+    config.plugins.push(new webpack.NormalModuleReplacementPlugin(
+      /[\\/]dompurify[\\/]dompurify\.js$/,
+      require.resolve("dompurify"),
+    ));
+    return config;
+  },
   async headers() {
     return [{source: "/(.*)", headers: [
       {key: "X-Content-Type-Options", value: "nosniff"},

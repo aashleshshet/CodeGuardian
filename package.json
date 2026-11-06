@@ -18,7 +18,8 @@
     "monaco-editor": "^0.55.1",
     "lucide-react": "^0.577.0",
     "@fontsource/public-sans": "^5.2.7",
-    "@fontsource/ibm-plex-mono": "^5.2.7"
+    "@fontsource/ibm-plex-mono": "^5.2.7",
+    "dompurify": "3.4.17"
   },
   "devDependencies": {
     "typescript": "^5.9.3",
