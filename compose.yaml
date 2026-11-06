@@ -1,4 +1,9 @@
 name: codeguardian
+x-service-env: &service-env
+  DATABASE_URL: postgresql+psycopg://guardian:${POSTGRES_PASSWORD}@postgres:5432/guardian
+  REDIS_URL: redis://redis:6379/0
+  SCANNER_MODE: docker
+  TASKS_EAGER: "false"
 services:
   postgres:
     image: postgres:17-alpine
@@ -16,14 +21,19 @@ services:
     networks: [services]
   redis:
     image: redis:7.4-alpine
-    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "256mb", "--maxmemory-policy", "noeviction"]
+    command: ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec", "--maxmemory", "256mb", "--maxmemory-policy", "noeviction"]
+    volumes: ["redis_data:/data"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
     restart: unless-stopped
     networks: [services]
   migrate:
     build: {context: ., dockerfile: backend/Dockerfile, target: api}
     env_file: .env
-    environment:
-      DATABASE_URL: postgresql+psycopg://guardian:${POSTGRES_PASSWORD}@postgres:5432/guardian
+    environment: *service-env
     command: ["alembic", "-c", "backend/alembic.ini", "upgrade", "head"]
     depends_on:
       postgres: {condition: service_healthy}
@@ -31,15 +41,16 @@ services:
   api:
     build: {context: ., dockerfile: backend/Dockerfile, target: api}
     env_file: .env
-    environment:
-      DATABASE_URL: postgresql+psycopg://guardian:${POSTGRES_PASSWORD}@postgres:5432/guardian
-      REDIS_URL: redis://redis:6379/0
-      SCANNER_MODE: docker
-      TASKS_EAGER: "false"
+    environment: *service-env
     ports: ["127.0.0.1:8000:8000"]
     depends_on:
       migrate: {condition: service_completed_successfully}
-      redis: {condition: service_started}
+      redis: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
     read_only: true
     tmpfs: ["/tmp:size=64m,mode=1777"]
     cap_drop: [ALL]
@@ -53,18 +64,23 @@ services:
     build: {context: ., dockerfile: backend/Dockerfile, target: worker}
     env_file: .env
     environment:
-      DATABASE_URL: postgresql+psycopg://guardian:${POSTGRES_PASSWORD}@postgres:5432/guardian
-      REDIS_URL: redis://redis:6379/0
-      SCANNER_MODE: docker
+      <<: *service-env
       SCAN_ROOT: ${SCANNER_JOBS_DIR:?Set absolute SCANNER_JOBS_DIR}
-      TASKS_EAGER: "false"
+      SCANNER_CACHE: ${SCANNER_CACHE_DIR:?Set absolute SCANNER_CACHE_DIR}
     user: "${WORKER_UID:-1000}:${DOCKER_GID:-1000}"
     volumes:
       - ${DOCKER_SOCKET:-/var/run/docker.sock}:/var/run/docker.sock
       - ${SCANNER_JOBS_DIR}:${SCANNER_JOBS_DIR}
+      - ${SCANNER_CACHE_DIR}:${SCANNER_CACHE_DIR}:ro
     depends_on:
       migrate: {condition: service_completed_successfully}
-      redis: {condition: service_started}
+      redis: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A app.tasks.celery inspect ping --destination celery@$$HOSTNAME --timeout 5"]
+      interval: 60s
+      timeout: 15s
+      start_period: 30s
+      retries: 3
     read_only: true
     tmpfs: ["/tmp:size=128m,mode=1777"]
     cap_drop: [ALL]
@@ -74,8 +90,39 @@ services:
     pids_limit: 128
     restart: unless-stopped
     networks: [services, egress]
+  scheduler:
+    build: {context: ., dockerfile: backend/Dockerfile, target: api}
+    env_file: .env
+    environment: *service-env
+    command: ["celery", "-A", "app.tasks.celery", "beat", "--loglevel=WARNING", "--schedule=/tmp/celerybeat-schedule"]
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+      redis: {condition: service_healthy}
+    read_only: true
+    tmpfs: ["/tmp:size=16m,mode=1777"]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 256m
+    cpus: 0.5
+    pids_limit: 64
+    restart: unless-stopped
+    networks: [services]
+  scanner-data:
+    profiles: [tools]
+    build: {context: ., dockerfile: backend/Dockerfile, target: scanner_tools}
+    user: "${WORKER_UID:-1000}:${DOCKER_GID:-1000}"
+    command: ["python", "scripts/update_scanner_data.py", "--cache-dir", "/scanner-cache"]
+    volumes: ["${SCANNER_CACHE_DIR}:/scanner-cache"]
+    read_only: true
+    tmpfs: ["/tmp:size=256m,mode=1777"]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 3g
+    cpus: 2
+    networks: [egress]
 networks:
   services: {internal: true}
   egress: {}
 volumes:
   postgres_data:
+  redis_data:

@@ -1,64 +1,23 @@
-import { test, expect } from "@playwright/test";
-
-test("fixture evidence → source → reviewable diff → report", async ({page}) => {
-  const errors: string[] = [];
-  page.on("pageerror", error => errors.push(error.message));
-  await page.goto("/");
-  await expect(page.getByRole("heading", {name: "Security overview"})).toBeVisible();
-  await expect(page.locator(".finding-row")).toHaveCount(5);
-  await page.getByLabel("Search all findings").fill("not-a-real-finding");
-  await expect(page.getByText("No findings match", {exact: true})).toBeVisible();
-  await page.getByLabel("Search all findings").fill("");
-  await page.evaluate(() => document.fonts.ready);
-  await page.screenshot({path: ".impeccable/review/desktop.png", fullPage: true, animations: "disabled"});
-  await page.getByRole("button", {name: "Code review", exact: true}).click();
-  await page.locator(".inbox-finding").filter({hasText: "Unescaped HTML assignment"}).first().click();
-  await expect(page.locator(".monaco-editor").first()).toBeVisible();
-  await page.getByRole("button", {name: "Review suggested patch"}).click();
-  await expect(page.locator(".monaco-diff-editor")).toBeVisible();
-  await expect(page.getByRole("button", {name: "Export reviewed patch"})).toBeDisabled();
-  await page.getByLabel("I reviewed this diff and will test it before use.").check();
-  const patch = page.waitForEvent("download");
-  await page.getByRole("button", {name: "Export reviewed patch"}).click();
-  expect((await patch).suggestedFilename()).toBe("codeguardian.patch");
-  await page.getByRole("button", {name: "Dismiss notification"}).click();
-  await page.evaluate(() => window.scrollTo(0, 0));
-  await page.screenshot({path: ".impeccable/review/review.png", fullPage: true, animations: "disabled"});
-  await page.getByRole("button", {name: "Reports", exact: true}).click();
-  const report = page.waitForEvent("download");
-  await page.getByRole("button", {name: "SARIF", exact: true}).click();
-  expect((await report).suggestedFilename()).toBe("codeguardian.sarif");
-  await page.getByRole("button", {name: "Dismiss notification"}).click();
-  await page.getByRole("button", {name: "Overview", exact: true}).click();
-  await page.getByRole("button", {name: "Switch to light theme"}).click();
-  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
-  await page.screenshot({path: ".impeccable/review/light.png", fullPage: true, animations: "disabled"});
-  await page.getByRole("button", {name: "Switch to dark theme"}).click();
-  await page.setViewportSize({width: 390, height: 844});
-  await page.evaluate(() => window.scrollTo(0, 0));
-  await page.screenshot({path: ".impeccable/review/mobile.png", fullPage: true, animations: "disabled"});
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-  await page.getByRole("button", {name: "Code review", exact: true}).click();
-  await expect(page.getByRole("heading", {name: "Review the evidence"})).toBeVisible();
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-  expect(errors).toEqual([]);
+import { test, expect, type Page } from "@playwright/test";
+async function signIn(page:Page, scan=false){const r=await page.request.post("/api/backend/test/session",{headers:{Origin:"http://127.0.0.1:3001"},data:{scan}});expect(r.ok()).toBeTruthy();const data=await r.json();await page.goto("/");await expect(page.getByRole("heading",{name:"Your security, in focus."})).toBeVisible();return data;}
+test("public landing is honest, responsive, and respects reduced motion",async({page})=>{
+ await page.goto("/");await expect(page.getByRole("heading",{name:"See the risk. Own the fix."})).toBeVisible();await expect(page.getByText("Sign-in is not available yet",{exact:true})).toBeVisible();await expect(page.getByText("Demo workspace")).toHaveCount(0);
+ await page.screenshot({path:".cache/screenshots/welcome-dark.png",fullPage:true,animations:"disabled"});
+ await page.getByRole("button",{name:"Switch to light theme"}).click();await expect(page.locator("html")).toHaveAttribute("data-theme","light");await page.screenshot({path:".cache/screenshots/welcome-light.png",fullPage:true,animations:"disabled"});
+ await page.setViewportSize({width:390,height:844});await page.emulateMedia({reducedMotion:"reduce"});await expect(page.getByRole("heading",{name:"See the risk. Own the fix."})).toBeVisible();expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();expect(await page.locator(".signin-panel").evaluate(el=>getComputedStyle(el).animationName)).toBe("none");await page.screenshot({path:".cache/screenshots/welcome-mobile.png",fullPage:true,animations:"disabled"});
 });
-
-test("browser → API → actual scanners → persisted evidence → review", async ({page}) => {
-  await page.goto("/");
-  await page.getByRole("button", {name: "Run scan", exact: true}).click();
-  await expect(page.getByText("Scan complete. The latest analyzer evidence is ready.")).toBeVisible({timeout: 60_000});
-  await expect(page.locator(".demo-banner")).toHaveCount(0);
-  await expect(page.locator(".metric").first()).toContainText("12");
-  await page.getByRole("button", {name: "Code review", exact: true}).click();
-  await page.locator(".inbox-finding").filter({hasText: "Unescaped HTML assignment"}).first().click();
-  await page.getByRole("button", {name: "Confirm", exact: true}).click();
-  await expect(page.getByText("Finding confirmed. Review saved.", {exact: true})).toBeVisible();
-  const repositories = await page.request.get("/api/backend/repositories");
-  const repos = await repositories.json();
-  const scan = await page.request.get(`/api/backend/scans/${repos[0].scans[0].id}`);
-  const data = await scan.json();
-  expect(data.coverage.complete).toBe(true);
-  expect(data.findings.some((f: {status: string}) => f.status === "confirmed")).toBe(true);
-  expect(JSON.stringify(data)).not.toContain("cg_fixture_not_a_real_credential");
+test("new account has empty real data and usable settings",async({page})=>{
+ await signIn(page);await expect(page.getByRole("heading",{name:"A clearer picture starts with your repository."})).toBeVisible();await page.screenshot({path:".cache/screenshots/workspace-empty.png",fullPage:true,animations:"disabled"});
+ await page.getByRole("button",{name:"Connect your first repository"}).click();await expect(page.getByRole("heading",{name:"Connected on your terms"})).toBeVisible();await expect(page.getByRole("button",{name:"Sync repositories"})).toBeDisabled();await expect(page.getByRole("button",{name:"Upload and scan"})).toBeDisabled();
+ await page.getByRole("button",{name:"Settings",exact:true}).click();const checkbox=page.getByRole("checkbox",{name:"Scan failures",exact:true});await checkbox.uncheck();await page.reload();await expect(checkbox).not.toBeChecked();
+ await page.getByRole("button",{name:"Delete account",exact:true}).click();await expect(page.getByRole("alertdialog")).toBeVisible();await page.getByRole("button",{name:"Keep my data"}).click();await page.getByRole("button",{name:"Sign out",exact:true}).click();await expect(page.getByRole("heading",{name:"See the risk. Own the fix."})).toBeVisible();
+});
+test("real scanner evidence, Monaco, review persistence, human patch gate, reports",async({page})=>{
+ const data=await signIn(page,true);await expect(page.locator(".scan-row")).toHaveCount(1);await page.screenshot({path:".cache/screenshots/overview-dark.png",fullPage:true,animations:"disabled"});
+ await page.getByRole("button",{name:"Code review",exact:true}).click();const inbox=page.locator(".inbox-finding").filter({hasText:"SQL injection"});await inbox.first().click();await expect(page.locator(".monaco-editor").first()).toBeVisible();await expect(page.getByRole("heading",{name:"SQL injection"})).toBeVisible();
+ await page.evaluate(()=>window.scrollTo(0,0));await page.screenshot({path:".cache/screenshots/review-dark.png",fullPage:false,animations:"disabled"});await page.getByRole("button",{name:"Confirm",exact:true}).click();await expect(page.getByText("Finding confirmed. Review saved.",{exact:true})).toBeVisible();await page.reload();await inbox.first().click();await expect(page.getByRole("button",{name:"Reopen",exact:true})).toBeVisible();
+ await page.locator(".inbox-finding").filter({hasText:"receipt.ts"}).click();await page.getByRole("button",{name:"Review suggested patch",exact:true}).click();const exportPatch=page.getByRole("button",{name:"Export reviewed patch",exact:true});await expect(exportPatch).toBeDisabled();await page.getByLabel("I reviewed this diff and will test it before use.").check();await expect(exportPatch).toBeEnabled();const patchDownload=page.waitForEvent("download");await exportPatch.click();expect((await patchDownload).suggestedFilename()).toBe("codeguardian.patch");
+ await page.getByRole("button",{name:"Switch to light theme"}).click();await page.evaluate(()=>window.scrollTo(0,0));await page.screenshot({path:".cache/screenshots/patch-light.png",fullPage:false,animations:"disabled"});await page.getByRole("button",{name:"Reports",exact:true}).click();const reportDownload=page.waitForEvent("download");await page.getByRole("button",{name:"Export JSON",exact:true}).click();expect((await reportDownload).suggestedFilename()).toContain("codeguardian-");
+ const scan=await(await page.request.get(`/api/backend/scans/${data.scan_id}`)).json();expect(scan.coverage.complete).toBe(true);expect(scan.findings.some((f:{status:string})=>f.status==="confirmed")).toBe(true);expect(JSON.stringify(scan)).not.toContain("cg_fixture_not_a_real_credential");
+ await page.setViewportSize({width:390,height:844});await page.getByRole("button",{name:"Repositories",exact:true}).click();expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();await page.screenshot({path:".cache/screenshots/repositories-mobile.png",fullPage:true,animations:"disabled"});
 });

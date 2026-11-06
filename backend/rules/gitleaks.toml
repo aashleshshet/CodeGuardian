@@ -1,0 +1,3 @@
+title = "CodeGuardian trusted Gitleaks defaults"
+[extend]
+useDefault = true

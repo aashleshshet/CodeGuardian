@@ -6,7 +6,7 @@ import pytest
 from cryptography.fernet import Fernet
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-os.environ.update(DATABASE_URL="sqlite://", ENVIRONMENT="test", ALLOW_DEMO_LOGIN="true", TASKS_EAGER="true", SCANNER_MODE="trusted-fixture", PUBLIC_URL="http://testserver", TOKEN_ENCRYPTION_KEY=Fernet.generate_key().decode())
+os.environ.update(DATABASE_URL="sqlite://", ENVIRONMENT="test", TASKS_EAGER="true", SCANNER_MODE="trusted-fixture", PUBLIC_URL="http://testserver", ENABLED_SCANNERS="semgrep,bandit", TOKEN_ENCRYPTION_KEY=Fernet.generate_key().decode())
 from fastapi.testclient import TestClient
 from sqlalchemy.pool import StaticPool
 from sqlmodel import SQLModel, Session, create_engine
@@ -30,7 +30,15 @@ def client(monkeypatch):
 
 @pytest.fixture
 def authenticated(client):
-    assert client.post("/auth/demo", headers={"Origin": "http://testserver"}).status_code == 200
-    identity = client.get("/auth/me").json()
-    client.headers.update({"Origin": "http://testserver", "X-CSRF-Token": identity["csrf_token"]})
+    from app.models import User
+    from app.auth import make_session
+    from fastapi.responses import JSONResponse
+    db = next(app.dependency_overrides[get_db]())
+    user = User(github_id=123, login="test-reviewer")
+    db.add(user); db.commit(); db.refresh(user)
+    response = JSONResponse({})
+    session = make_session(db, user, response)
+    token = response.headers["set-cookie"].split("cg_session=", 1)[1].split(";", 1)[0]
+    client.cookies.set("cg_session", token)
+    client.headers.update({"Origin": "http://testserver", "X-CSRF-Token": session.csrf_token})
     return client

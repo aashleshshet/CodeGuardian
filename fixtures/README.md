@@ -1,10 +1,9 @@
-# Reproducible scan fixtures
+# Reproducible security test inputs
 
-`baseline/` and `current/` are two source snapshots, not runnable applications.
-The baseline additionally uses unsafe pickle deserialization and weak cryptographic hashing.
-The current snapshot removes those examples so commit comparisons have real resolved findings.
-Neither directory has a package manifest, install hook, or executable test command.
+`baseline/` and `current/` are intentionally vulnerable source snapshots, not runnable applications. Never execute their code, build their Dockerfiles, install their packages or deploy their manifests.
 
-Generate actual scanner results with `python scripts/build_demo.py` after installing the backend
-requirements and putting the virtual environment's bin directory on PATH. Results include scanner
-versions, timestamps and content hashes; they do not claim to be Git commit SHAs.
+The baseline additionally contains unsafe pickle deserialization and weak hashing; the current snapshot removes those examples to exercise real finding comparisons. Both snapshots include Python/JavaScript/TypeScript patterns, old npm/PyPI dependency manifests, unsafe Docker/Kubernetes configurations and a deliberately synthetic, invalid credential pattern for redaction tests. There are no install hooks or executable test commands.
+
+Run `RUN_ALL_SCANNERS=true SCANNER_CACHE="$PWD/.cache/scanner-data" pytest backend/tests/test_scanners.py -q` after provisioning the pinned scanners and offline caches as described in the root README. This invokes real analyzer processes only against the exact trusted fixture bytes. Arbitrary repository source requires the Docker runner.
+
+Advisory counts change as the public vulnerability databases evolve. Preserve the cache manifest to reproduce a specific run. Unit-test snapshot data in `backend/tests/data/` is never served to production clients; browser tests produce fresh Semgrep/Bandit evidence and store it in their isolated test database.

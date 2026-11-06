@@ -6,7 +6,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
 COPY backend/requirements.txt /app/backend/requirements.txt
 RUN pip install --no-cache-dir -r backend/requirements.txt
 COPY backend /app/backend
-COPY fixtures /app/fixtures
 COPY scripts /app/scripts
 RUN useradd --uid 1000 --create-home guardian
 
@@ -18,10 +17,13 @@ CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--no-acc
 FROM base AS worker
 COPY --from=docker_cli /usr/local/bin/docker /usr/local/bin/docker
 USER guardian
-CMD ["celery", "-A", "app.tasks.celery", "worker", "--loglevel=WARNING", "--concurrency=2", "--without-gossip", "--without-mingle", "--without-heartbeat"]
+CMD ["celery", "-A", "app.tasks.celery", "worker", "--loglevel=WARNING", "--concurrency=2", "--without-gossip", "--without-mingle"]
 
-FROM base AS scanner
+FROM base AS scanner_tools
+RUN python scripts/install_scanners.py --destination /usr/local/bin
 ENV HOME=/tmp SEMGREP_SEND_METRICS=off SEMGREP_ENABLE_VERSION_CHECK=0
+
+FROM scanner_tools AS scanner
 USER 65532:65532
 WORKDIR /source
 ENTRYPOINT ["python", "-m", "app.scanner"]

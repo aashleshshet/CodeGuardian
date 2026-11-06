@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: unsafe-fixture
+spec:
+  containers:
+    - name: fixture
+      image: example.invalid/test:latest
+      securityContext:
+        privileged: true
+        runAsUser: 0

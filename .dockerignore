@@ -11,3 +11,4 @@ data
 .taste-skill
 test-results
 playwright-report
+backend/tests

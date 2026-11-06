@@ -4,7 +4,8 @@ import zipfile
 from pathlib import PurePosixPath
 from .config import settings
 
-EXTENSIONS = {".py", ".js", ".jsx", ".ts", ".tsx", ".json", ".yaml", ".yml", ".toml", ".env", ".md", ".txt", ".ini", ".cfg"}
+EXTENSIONS = {".py", ".js", ".jsx", ".ts", ".tsx", ".json", ".yaml", ".yml", ".toml", ".env", ".md", ".txt", ".ini", ".cfg", ".lock", ".tf", ".tfvars", ".hcl", ".mod", ".sum", ".xml", ".properties"}
+FILENAMES = {"Dockerfile", "Containerfile", "Gemfile", "Gemfile.lock", "Pipfile", "Pipfile.lock", "yarn.lock", "poetry.lock", "uv.lock", "go.mod", "go.sum"}
 IGNORED = {".git", "node_modules", ".venv", "venv", "vendor", "dist", "build", ".next", "__pycache__"}
 
 
@@ -41,7 +42,7 @@ def extract_sources(data: bytes, strip_root: bool = False) -> tuple[dict[str, st
                 seen.add(name.casefold())
                 total += entry.file_size
                 if total > cfg.max_source_bytes: raise ValueError("Expanded archive exceeds 20 MB limit")
-                if any(part in IGNORED for part in path.parts) or (path.suffix not in EXTENSIONS and not path.name.startswith(".env")):
+                if any(part in IGNORED for part in path.parts) or (path.suffix not in EXTENSIONS and path.name not in FILENAMES and not path.name.startswith((".env", "Dockerfile.", "Containerfile."))):
                     skipped += 1
                     continue
                 if entry.file_size > cfg.max_file_bytes: raise ValueError("A source file exceeds 250 KB limit")

@@ -7,7 +7,13 @@ permissions:
 jobs:
   verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 35
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env: {POSTGRES_USER: guardian, POSTGRES_PASSWORD: ci-only-password, POSTGRES_DB: guardian}
+        ports: ["5432:5432"]
+        options: --health-cmd="pg_isready -U guardian" --health-interval=5s --health-timeout=3s --health-retries=10
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with: {persist-credentials: false}
@@ -19,19 +25,41 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: python -m venv .venv
       - run: .venv/bin/pip install -r backend/requirements.txt
-      - run: echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
-      - name: Test trust boundaries and real scanners
-        run: .venv/bin/pytest backend/tests -q
-      - name: Typecheck and build
+      - name: Install verified analyzer binaries
+        run: |
+          .venv/bin/python scripts/install_scanners.py --destination .cache/tools
+          echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
+          echo "$PWD/.cache/tools" >> "$GITHUB_PATH"
+      - name: Prepare offline vulnerability data
+        run: python scripts/update_scanner_data.py --cache-dir .cache/scanner-data
+      - name: Verify PostgreSQL migration
+        env:
+          DATABASE_URL: postgresql+psycopg://guardian:ci-only-password@127.0.0.1:5432/guardian
+        run: alembic -c backend/alembic.ini upgrade head
+      - name: Test auth, lifecycle, migrations and five real scanners
+        run: RUN_ALL_SCANNERS=true SCANNER_CACHE="$PWD/.cache/scanner-data" pytest backend/tests -q
+      - name: Typecheck and production build
         run: pnpm typecheck && pnpm build
       - run: pnpm exec playwright install --with-deps chromium
-      - name: Test browser and full-stack flow
+      - name: Test browser and real persisted review flow
         run: pnpm test:e2e
-      - name: Verify scanner isolation in Docker
+      - name: Verify all analyzers in the offline Docker sandbox
         run: |
           docker build -f backend/Dockerfile --target scanner -t codeguardian-scanner:local .
-          .venv/bin/python -m zipfile -c /tmp/fixture.zip fixtures/current/api/payments.py
-          SCANNER_MODE=docker .venv/bin/python scripts/scan_archive.py /tmp/fixture.zip --output /tmp/scan.json
+          chmod -R a+rX .cache/scanner-data
+          python -m zipfile -c /tmp/fixture.zip fixtures/current
+          SCANNER_MODE=docker SCANNER_CACHE="$PWD/.cache/scanner-data" python scripts/scan_archive.py /tmp/fixture.zip --output .cache/docker-scan.json
+      - name: Scan CodeGuardian source and dependencies for review
+        run: |
+          python scripts/package_self_review.py /tmp/codeguardian.zip
+          SCANNER_MODE=docker SCANNER_CACHE="$PWD/.cache/scanner-data" python scripts/scan_archive.py /tmp/codeguardian.zip --output .cache/self-review.json
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        if: failure()
-        with: {name: test-evidence, path: test-results/, retention-days: 7}
+        if: always()
+        with:
+          name: verification-evidence
+          path: |
+            test-results/
+            .cache/screenshots/
+            .cache/docker-scan.json
+            .cache/self-review.json
+          retention-days: 7

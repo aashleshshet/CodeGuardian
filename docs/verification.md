@@ -1,19 +1,20 @@
 # Verification record
 
-Verified locally on 5 November 2026 against the pinned dependency lockfiles.
+Local upgrade verification on 2026-11-06:
 
-| Boundary | Evidence |
-|---|---|
-| Real analysis | Semgrep 1.183.0, Bandit 1.9.4 and built-in secret patterns: 12 current, 15 baseline, 3 resolved findings |
-| Backend security | 21 passing tests covering auth, tenant isolation, CSRF, secret redaction, hostile archive paths/links/size limits, model citation rejection, webhook signatures, patch review gate and actual scanner integrations |
-| Frontend type safety | `pnpm typecheck` passes |
-| Production compilation | Next.js webpack production build passes; no credentials required for fixture mode |
-| Browser review workflow | Playwright verifies filters, line-level Monaco, diff viewer, blocked export before acknowledgment, patch/report downloads, themes and mobile overflow |
-| Full-stack workflow | Playwright starts FastAPI, uses a development session, invokes actual scanners on the trusted fixture, persists results in SQLite, confirms a finding and verifies persisted state through the API |
-| Screenshots | Actual rendered dark/light overview, mobile overview and review/diff screen captured under `.impeccable/review/` |
+| Check | Evidence |
+| --- | --- |
+| Python suite | 47 passing tests, including real analyzer processes, auth/lifecycle/security, cache throttling and migration preservation |
+| Real analyzers | Semgrep, Bandit, Gitleaks 8.30.1, OSV-Scanner 2.7.0 and Trivy 0.76.2 all completed on the owned vulnerable fixture; secret-value absence asserted |
+| Offline data | Official npm/PyPI OSV databases and Trivy databases/checks downloaded administratively; manifest records hashes and update time |
+| Browser suite | Three end-to-end scenarios passed: honest landing/theme/mobile/reduced-motion; empty account/settings; real persisted evidence/Monaco/triage/human patch gate/report download |
+| Migration | Fresh SQLite migration plus populated 001→002 test preserves imported evidence and removes explicitly marked fixtures |
+| Visual review | Captured dark/light landing, real-data workspace, source/diff review and mobile layouts; images inspected directly |
 
-No real GitHub App, private repository token, external LLM, or production backend credential was supplied. Those live integration flows are implemented but not locally exercised against customer services. Docker is not installed on the local workstation, so the GitHub Actions container smoke check is the executable validation for the isolated runner. Local full-stack testing uses the explicitly restricted trusted-fixture mode and does not demonstrate container isolation.
+The GitHub Actions workflow additionally exercises PostgreSQL migrations and all scanners inside the actual offline Docker isolation command, then creates a CodeGuardian self-review artifact. Consult the run for this commit for the current CI result. Self-review artifacts surface findings for review and do not certify vulnerability-free dependencies.
 
-Development React needs `unsafe-eval` for debugging; production CSP omits it. Webpack is selected explicitly because the local Turbopack build stalled with Monaco's worker bundle; the production webpack build completed successfully.
+Docker is unavailable on the local workstation; local exact-fixture execution is test-only and does not establish container isolation. A live backend host has not been selected. No production GitHub App credentials, private-repository authorization or local/remote model endpoint was supplied. Those live paths require the activation smoke tests in [deployment.md](deployment.md). Mocked GitHub/model tests validate application contracts, not external service configuration.
 
-The deployment is a fixture explorer until `API_URL` points to a configured backend. UI and documentation distinguish this from a connected scanning service. Patches are untested suggestions, reviewed before export, and never applied automatically.
+The Vercel frontend has no fabricated fallback data. Without a configured API, it presents a service-setup notice. The test harness resides only in `backend/tests/e2e_app.py`, refuses non-test environments and is excluded from production images.
+
+Reproduce checks using the commands in [README.md](../README.md). Keep the scanner-data manifest when comparing advisory results: public databases evolve independently of the pinned executable versions.

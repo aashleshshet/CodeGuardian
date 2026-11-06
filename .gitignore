@@ -20,3 +20,5 @@ playwright-report/
 .taste-skill/screenshots/
 .impeccable/review/
 .cache/
+!backend/tests/data/
+!backend/tests/data/scanner_snapshot.json

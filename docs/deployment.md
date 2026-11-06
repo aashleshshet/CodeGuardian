@@ -1,114 +1,119 @@
-# Deployment
+# Deployment and live activation
 
-## 1. Vercel frontend
+The frontend is hosted on Vercel. API, PostgreSQL, Redis, scheduler and scanner workers require a Docker-capable Linux host; ordinary Vercel functions are not the scanner runtime. No container host has been chosen, so backend deployment and real GitHub authorization remain operator activation steps.
 
-Import `aashleshshet/CodeGuardian` as a **new** Vercel project using the Next.js framework, repository root, Node.js 22, install `pnpm install --frozen-lockfile`, and build `pnpm build`. `vercel.json` supplies the build configuration.
+## 1. Prepare a dedicated scanner host
 
-The frontend deploys without service credentials and initially exposes only the redacted, reproducible fixture explorer. It clearly labels fixture results and directs users to connect the review service before imports/new scans. Do not call this state a connected production scanner.
+Use a host with Docker/Compose, outbound HTTPS for GitHub and trusted database updates, and capacity for two 3 GiB scanner containers plus the application services. Keep PostgreSQL and Redis on the internal Compose network. Put the API behind an HTTPS reverse proxy; it binds to `127.0.0.1:8000` by default.
 
-Set **server-only** `API_URL=https://api.your-domain.example` in Vercel after the backend is reachable, then redeploy. Never use `NEXT_PUBLIC_` for this value or any credential. Backend `PUBLIC_URL` must exactly match the canonical Vercel/custom origin to pass CSRF checks. Use a stable deployment domain for OAuth callbacks; arbitrary preview URLs will not pass the production origin policy.
+The worker controls a Docker daemon. Isolate this authority from other workloads. A dedicated rootless Docker daemon is preferred; set its socket path and UID/GID explicitly. Rootful Docker also works but grants the worker host-level Docker authority. The API never receives the Docker socket.
 
-## 2. Dedicated container host
-
-Use a Linux host with Docker Engine/Compose, preferably a rootless daemon. The worker needs Docker CLI/daemon access to create restricted scanner containers. The API must never have socket access. Use a dedicated host; daemon access is powerful even though individual scanner containers are constrained.
-
-```bash
+```sh
 cp .env.example .env
-mkdir -p data/jobs
+python3 -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())'
 ```
 
-Populate `.env` locally or through a secret manager:
+Install the Python dependencies first if `cryptography` is unavailable. Store the generated key as `TOKEN_ENCRYPTION_KEY` in the secret store / untracked `.env`. Generate a strong URL-safe `POSTGRES_PASSWORD`. Set:
 
 ```dotenv
 ENVIRONMENT=production
-PUBLIC_URL=https://your-project.vercel.app
-SECRET_KEY=<random 48-byte-url-safe value>
-TOKEN_ENCRYPTION_KEY=<Fernet key>
-POSTGRES_PASSWORD=<generated URL-safe database password>
-SCANNER_JOBS_DIR=/absolute/path/to/CodeGuardian/data/jobs
-WORKER_UID=<UID that owns the job directory>
-DOCKER_GID=<group allowed to access the Docker socket>
-DOCKER_SOCKET=/var/run/docker.sock
+PUBLIC_URL=https://codeguardian-ai-rho.vercel.app
+POSTGRES_PASSWORD=<generated-url-safe-password>
+TOKEN_ENCRYPTION_KEY=<fernet-key>
 SCANNER_MODE=docker
 TASKS_EAGER=false
-ALLOW_DEMO_LOGIN=false
+SCANNER_JOBS_DIR=/srv/codeguardian/jobs
+SCANNER_CACHE_DIR=/srv/codeguardian/scanner-data
+WORKER_UID=1000
+DOCKER_GID=<socket-group-id>
+DOCKER_SOCKET=<dedicated-daemon-socket-path>
 ```
 
-Use the same absolute staging path on the worker and Docker host. Bind mounts are resolved by the daemon, not by the worker's container namespace. For rootless Docker, set `DOCKER_SOCKET` to the rootless socket path and grant only the worker identity access. Set staging-directory ownership to the worker UID. Do not loosen permissions on the Docker socket for the API or other users.
+Create both absolute directories and give the worker UID write access to `jobs` and the cache updater write access to `scanner-data`. Workers mount them at the same absolute host paths so sibling scanner bind mounts resolve correctly. Cache directories/files must be readable by scanner UID 65532. The Compose file sets internal `DATABASE_URL`, `REDIS_URL`, `SCAN_ROOT` and `SCANNER_CACHE`.
 
-Generate keys **locally**; do not paste them into chat or commit them:
+## 2. Create the GitHub App
 
-```bash
-.venv/bin/python -c 'import secrets; print(secrets.token_urlsafe(48))'
-.venv/bin/python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())'
-```
+Use the deployed frontend URL as the homepage. Configure:
 
-Build the scanner image before accepting jobs, then start the services:
+- Callback: `https://codeguardian-ai-rho.vercel.app/api/backend/auth/github/callback`
+- Setup URL: `https://codeguardian-ai-rho.vercel.app/#integrations`
+- Webhook: `https://YOUR-API-HOST/webhooks/github` (or the frontend BFF path `/api/backend/webhooks/github`)
+- Enable expiring user access tokens. Configure user authorization during installation if desired.
+- Repository permissions: **Contents: read**, **Metadata: read**, **Pull requests: read** for PR event context. **Checks: write** is optional and only needed when publishing checks.
+- No Contents write, PR write, administration, workflows write or organization-wide write permission is needed.
+- Subscribe to `push`, `pull_request`, `installation`, `installation_repositories`.
+- Install on **selected repositories**. Private repositories work only within the user and installation’s overlapping access.
 
-```bash
+Set `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `GITHUB_APP_ID`, `GITHUB_APP_SLUG`, `GITHUB_PRIVATE_KEY` and `GITHUB_WEBHOOK_SECRET`. Store the PEM securely; escaped `\n` newlines are accepted. Installation tokens request only the selected repository and Contents read; Checks write is requested solely for opted-in check publication.
+
+`GITHUB_CHECKS_ENABLED=false` is the default. Enable it only after granting Checks write. Each repository separately opts into automatic scans and check summaries. A blocking policy is also a separate explicit choice. Branch protection rules are configured manually on GitHub.
+
+## 3. Build, provision scanner data and migrate
+
+```sh
 docker build -f backend/Dockerfile --target scanner -t codeguardian-scanner:local .
-docker compose up --build -d
-docker compose ps
-curl http://127.0.0.1:8000/health
+docker compose build
+docker compose --profile tools run --rm scanner-data
+# Ensure the dedicated scanner UID can read the database cache.
+chmod -R a+rX /srv/codeguardian/scanner-data
+docker compose up -d postgres redis
+docker compose run --rm migrate
+docker compose up -d api worker scheduler
 ```
 
-Compose waits for PostgreSQL, runs Alembic migrations, then starts API and workers. Redis/PostgreSQL have no published ports. Only the API binds to host loopback. Put a TLS reverse proxy in front of it with a 10 MB upload cap, rate limits, appropriate timeouts and body/credential logging disabled. Allow GitHub to reach `/webhooks/github` only if checks are enabled. Configure database and Redis authentication/TLS explicitly if either leaves the private single-host network.
+The provisioning command downloads public OSV npm/PyPI databases and Trivy vulnerability/check databases. It does not inspect repository source. OSV 2.7 uses `osv/osv-scalibr/{ecosystem}/all.zip` beneath the configured cache. Scanner binaries are pinned and checksum-verified by `scripts/install_scanners.py`.
 
-Run maintenance on a schedule:
+Refresh trusted scanner databases daily with the `scanner-data` command. A missing manifest or databases older than seven days makes scan coverage incomplete. Updates require network access; the actual scanner container always uses `--network=none`. Maintain binary versions deliberately, then run all tests before release.
 
-```bash
-docker compose exec api python scripts/maintenance.py
+Migration `002` is forward-only. Back up PostgreSQL before running it. It removes only legacy repositories explicitly marked as fixtures, backfills real imported finding state, upgrades GitHub IDs to BigInteger, creates lifecycle tables, and purges old source snapshots. Restore the pre-upgrade backup for rollback. Never run `create_all` as a production migration substitute.
+
+## 4. Connect Vercel
+
+Import `aashleshshet/CodeGuardian`, framework Next.js, root directory `.`, install `pnpm install --frozen-lockfile`, build `pnpm build`. Set server-only:
+
+```dotenv
+API_URL=https://YOUR-API-HOST
 ```
 
-The container includes the maintenance script. Review scan staging leftovers after hard worker crashes, excluding active jobs. Use a secret manager and encrypted backups. See [SECURITY.md](../SECURITY.md).
+Redeploy after changing this value because the page’s backend-configured state is built into the deployment. Never use a `NEXT_PUBLIC_` variable for credentials. GitHub App credentials belong on the backend, not in browser bundles. `PUBLIC_URL` must match the production frontend exactly so CSRF origin checks and secure cookies work. Configure preview deployments separately; do not casually share production sessions or secrets with arbitrary previews.
 
-## 3. GitHub App
+Without `API_URL`, the website intentionally shows setup information and no sample data. This is not a backend outage simulation or a working account.
 
-Create your own GitHub App:
+## 5. Optional local AI
 
-- Homepage: canonical frontend URL.
-- Callback: `https://your-project.vercel.app/api/backend/auth/github/callback`.
-- Repository permissions: **Metadata: read**, **Contents: read**.
-- Optional checks: **Checks: write**; subscribe to `pull_request` and set a webhook secret.
-- Do **not** grant contents write, pull requests write, actions write, or administration permissions.
-- Install on selected repositories. User authorization and installation access must both permit the repository.
+Run Ollama on a private network reachable by the API. The model must support JSON output and the OpenAI-compatible `/v1/chat/completions` API.
 
-Set `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `GITHUB_APP_ID`, `GITHUB_APP_SLUG`, and `TOKEN_ENCRYPTION_KEY`. For checks also set `GITHUB_PRIVATE_KEY` (PEM, escaped newlines supported), `GITHUB_WEBHOOK_SECRET`, and `GITHUB_CHECKS_ENABLED=true`. Webhook URL is the **API host** `/webhooks/github`, not the Next.js BFF; the BFF intentionally does not forward webhook authentication headers.
+```dotenv
+LLM_ENABLED=true
+LLM_BASE_URL=http://ollama:11434/v1
+LLM_MODEL=<installed-model-name>
+LLM_API_KEY=
+LLM_ALLOW_REMOTE=false
+```
 
-The OAuth user token is encrypted in PostgreSQL. The MVP requires reconnection after token expiration; it does not store/refresh long-lived refresh tokens. PR checks use short-lived, repository-scoped installation tokens. Fork heads are skipped. All repository writes remain outside the application.
+Attach the Ollama service/network explicitly if using Compose; an Ollama service is not provisioned by this repository. Local AI is optional and does not change analyzer classifications. For a remote provider, deliberately set `LLM_ALLOW_REMOTE=true`, use HTTPS and assess the redacted source-sharing boundary. No model or paid AI account is required for scans or curated remediation.
 
-Relevant contracts: [GitHub App user tokens](https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/generating-a-user-access-token-for-a-github-app), [installation access](https://docs.github.com/en/rest/apps/installations), [webhook validation](https://docs.github.com/en/webhooks/using-webhooks/validating-webhook-deliveries).
+Optional `NVD_API_KEY` increases the NVD request allowance. Advisory enrichment sends only validated public advisory IDs to fixed OSV/NVD endpoints, never source or a dependency inventory. Enrichment failure does not fabricate references.
 
-## 4. Optional LLM provider
+## 6. Live smoke test
 
-Set `LLM_ENABLED=true`, `LLM_BASE_URL`, `LLM_API_KEY` and `LLM_MODEL` on the API service only. The provider must implement `/chat/completions` with JSON object responses. No provider or model is silently selected. Without these variables, curated CWE guidance works normally.
+1. Check `/health` for liveness and `/ready` for DB, Redis and worker-heartbeat readiness. Readiness must return 200 before accepting scans.
+2. Sign in with GitHub. Install on a disposable repository you own, then sync and connect it. Verify a second account cannot access its scan IDs.
+3. Select a branch and commit, run a scan, and observe queued → preparing → scanning → analyzing → completed/partial. Confirm worker/container resource and network limits on the actual host.
+4. Inspect source, secret redaction, analyzer evidence and reports. Review a supported patch; export must require the acknowledgement checkbox. Apply/test it locally only.
+5. Opt into push scans. Deliver a signed event and redeliver the same delivery ID: it must create only one job. Test PR/base comparison and checks on a same-repository PR. Fork PRs are skipped.
+6. Revoke access and verify stored source is purged and new scans fail safely. Test token refresh, installation changes, rate-limit errors, cancellation and a worker restart.
+7. If enabling AI, test a source comment that attempts prompt injection and confirm the response remains grounded. No real model was supplied for release verification.
+8. Test backup restore and account/repository deletion before customer use.
 
-Requests contain redacted findings and a small source excerpt. Repository documentation is never placed into trusted instructions. Responses must match the schema and cite retrieved CWE IDs. Source privacy, gateway logging and provider retention are operator decisions; approve them before enabling LLM egress. There is no remote tool invocation or AI patch application.
+GitHub does not automatically redeliver every failed webhook. Monitor deliveries and manually redeliver failed/capacity-limited requests. The database outbox recovers accepted jobs if Redis delivery fails; it cannot recover an event GitHub never successfully delivered.
 
-## 5. Release verification
+## Retention and operations
 
-1. Run backend tests, TypeScript checking, production build, Playwright, and the Docker scanner CI check.
-2. Verify `/health`, sign in, import a repository you control, and confirm the exact SHA and engines in the UI.
-3. Verify missing permissions fail closed; revoke access and confirm subsequent imports fail.
-4. Inspect a secret fixture value: source, report and AI request must show a redaction.
-5. Review a supported patch and confirm export is disabled until acknowledgment; no branch or PR should be created.
-6. Enable optional checks on a test repository and confirm high evidence yields action required, partial coverage never yields success, and unsigned webhooks are rejected.
-
-GitHub/LLM live flows and Docker isolation must be validated with your actual deployment credentials/runtime. Unit tests and local fixture execution do not substitute for those checks.
-
-## Troubleshooting
-
-| Symptom | Check |
-|---|---|
-| Fixture works, imports do not | `API_URL`, backend availability, GitHub App settings and current session |
-| Scan stays queued | Redis/worker health; expired jobs are marked failed by maintenance |
-| Docker runner fails | Scanner image exists; worker daemon access; matching absolute job mount path; host capacity |
-| Semgrep unavailable locally on macOS | The runner sets `SSL_CERT_FILE` to certifi's CA bundle; use the project venv and put its `bin` on PATH |
-| CSRF rejected | Backend `PUBLIC_URL` exactly matches frontend origin and current CSRF token |
-| No AI button | LLM settings are intentionally disabled or incomplete |
-| No patch for a finding | Only bounded templates exist; secret-bearing files are excluded; author a context-aware fix locally |
-| Partial coverage | Parser errors, timeouts, unavailable analyzer or output limits; never interpret as a clean scan |
-
-## CI/CD
-
-GitHub Actions runs unit/integration tests, production build, browser tests and a Docker scanner smoke test with read-only repository permissions. Vercel Git integration builds the frontend from the connected branch. Configure Vercel Deployment Checks/branch protections if production must wait for GitHub CI; the default Git connection alone does not enforce that ordering. No secret-bearing job runs untrusted repository application code.
+- Source defaults to 24 hours (`SOURCE_RETENTION_HOURS`, 1–168). Redacted evidence remains; source and patch access explain expiry.
+- Historical results default to 90 days (`RESULT_RETENTION_DAYS`, 1–365). Latest finding state and the scan supporting it are retained until repository/account deletion.
+- Celery Beat runs maintenance every minute and worker-health pings every 30 seconds. Run one scheduler. `python scripts/maintenance.py` is the manual equivalent.
+- Job admission is serialized per user on PostgreSQL; three active jobs maximum. Workers atomically claim jobs and manually retry failed/partial jobs up to `MAX_SCAN_ATTEMPTS`.
+- Monitor incomplete coverage, stale data, broker failures, worker heartbeat, storage, rejected webhooks, authorization failures and check publishing errors. Apply ingress rate limits and observability appropriate to the chosen host.
+- Browser BFF requests are capped at 4 MB; use smaller ZIP uploads. Intake additionally limits file count, total source bytes, file size, archive paths, symlinks and compression ratios. Oversized/unsupported repositories are not silently reported as fully analyzed.
+- Protect `.env`, key material, backups, database volumes and proxy logs. Use managed encryption at rest and TLS between hosts. Keep API access logs free of OAuth callback query strings. Rotate the Fernet key with a migration of encrypted credentials; replacing it alone invalidates stored tokens.

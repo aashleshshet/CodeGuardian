@@ -10,8 +10,8 @@ from app.config import ROOT
 def seed(client):
     db = next(app.dependency_overrides[get_db]())
     user = db.exec(select(User)).first()
-    fixture = json.loads((ROOT / "public/demo.json").read_text())
-    repo = Repository(owner_id=user.id, full_name="test/repo", is_fixture=True)
+    fixture = json.loads((ROOT / "backend/tests/data/scanner_snapshot.json").read_text())
+    repo = Repository(owner_id=user.id, full_name="test/repo")
     db.add(repo); db.commit(); db.refresh(repo)
     scan = Scan(repository_id=repo.id, status="completed", findings=fixture["scan"]["findings"], files=fixture["scan"]["files"], coverage=fixture["scan"]["coverage"], commit_sha="a" * 40)
     db.add(scan); db.commit(); db.refresh(scan)
@@ -20,9 +20,14 @@ def seed(client):
 
 def test_requires_auth_and_csrf(client):
     assert client.get("/repositories").status_code == 401
-    assert client.post("/auth/demo", headers={"Origin": "https://evil.invalid"}).status_code == 403
-    client.post("/auth/demo", headers={"Origin": "http://testserver"})
-    assert client.post("/repositories/fixture", headers={"Origin": "http://testserver"}).status_code == 403
+    assert client.post("/auth/demo").status_code == 404
+    assert client.post("/repositories/fixture").status_code in {404, 405}
+    assert not any(getattr(route, "path", None) == "/repositories/fixture" for route in app.routes)
+
+
+def test_mutations_require_csrf(authenticated):
+    authenticated.headers.pop("X-CSRF-Token")
+    assert authenticated.post("/auth/logout").status_code == 403
 
 
 def test_tenant_isolation(authenticated):

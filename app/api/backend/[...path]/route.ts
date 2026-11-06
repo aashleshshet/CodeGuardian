@@ -6,14 +6,14 @@ const LIMIT = 4_000_000;
 
 async function proxy(request: NextRequest, context: {params: Promise<{path: string[]}>}) {
   const upstream = process.env.API_URL;
-  if (!upstream) return Response.json({detail: "The live review service is not connected. Explore the real scanner fixture, or configure API_URL to connect your backend."}, {status: 503});
+  if (!upstream) return Response.json({detail: "The review service is not configured. The operator must connect the backend before sign-in and scanning are available."}, {status: 503});
   const {path} = await context.params;
   if (path.some(segment => segment === ".." || segment.includes("/") || segment.includes("\\"))) return new Response(null, {status: 400});
   const url = new URL(upstream);
   url.pathname = "/" + path.map(encodeURIComponent).join("/");
   url.search = request.nextUrl.search;
   const headers = new Headers();
-  for (const key of ["cookie", "content-type", "x-csrf-token", "origin"]) {
+  for (const key of ["cookie", "content-type", "x-csrf-token", "origin", "x-hub-signature-256", "x-github-delivery", "x-github-event"]) {
     const value = request.headers.get(key); if (value) headers.set(key, value);
   }
   let body: Uint8Array | undefined;
@@ -30,9 +30,9 @@ async function proxy(request: NextRequest, context: {params: Promise<{path: stri
   try {
     const result = await fetch(url, {method: request.method, headers, body: body as BodyInit | undefined, redirect: "manual", cache: "no-store", signal: AbortSignal.timeout(55_000)});
     const outgoing = new Headers({"Cache-Control": "no-store"});
-    for (const key of ["content-type", "location", "content-disposition"]) {const value = result.headers.get(key); if (value) outgoing.set(key, value);}
+    for (const key of ["content-type", "location", "content-disposition", "retry-after", "x-request-id"]) {const value = result.headers.get(key); if (value) outgoing.set(key, value);}
     for (const cookie of result.headers.getSetCookie()) outgoing.append("Set-Cookie", cookie);
     return new Response(result.body, {status: result.status, headers: outgoing});
   } catch { return Response.json({detail: "The API is unavailable. Check your backend deployment and try again."}, {status: 502}); }
 }
-export { proxy as GET, proxy as POST, proxy as PATCH };
+export { proxy as GET, proxy as POST, proxy as PATCH, proxy as DELETE };
