@@ -1,5 +1,7 @@
 # Deployment and live activation
 
+The public root page is a standalone browser code checker. It accepts pasted code or a single source file without authentication, GitHub access or `API_URL`. Code stays in browser memory and worker messages. The backend setup below applies to the advanced `/workspace` routes, not the public checker.
+
 The current installation runs entirely on the user's device. Follow the [local setup guide](local.md) for local authentication, archive scans and optional on-device AI.
 
 This document covers optional cloud activation. The existing frontend is hosted on Vercel. API, PostgreSQL, Redis, scheduler and scanner workers require a Docker-capable Linux host; ordinary Vercel functions are not the scanner runtime. No cloud backend host has been chosen, so cloud deployment and real GitHub authorization remain operator activation steps.

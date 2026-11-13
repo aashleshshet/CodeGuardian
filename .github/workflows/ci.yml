@@ -38,6 +38,8 @@ jobs:
         run: alembic -c backend/alembic.ini upgrade head
       - name: Test auth, lifecycle, migrations and five real scanners
         run: RUN_ALL_SCANNERS=true SCANNER_CACHE="$PWD/.cache/scanner-data" pytest backend/tests -q
+      - name: Test browser-local analysis and redaction
+        run: pnpm test:browser-analysis
       - name: Typecheck and production build
         run: pnpm typecheck && pnpm build && python scripts/check_frontend_bundle.py
       - run: pnpm exec playwright install --with-deps chromium

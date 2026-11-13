@@ -1,5 +1,20 @@
 # Architecture and trust boundaries
 
+The public `/` route works independently of backend configuration. Source stays inside the browser; only application assets are fetched. Editing or replacing a file terminates its worker and invalidates prior findings. No source, result or patch is written to browser storage. The theme preference alone is persisted.
+
+```mermaid
+flowchart LR
+    Input[Paste or choose a source file] --> Memory[Tab memory: at most 200 KiB]
+    Memory --> Worker[Browser Web Worker: lexical rules]
+    Worker --> Redaction[Mask detected credentials]
+    Redaction --> Review[Line-level findings and guidance]
+    Review --> Report[Download redacted report]
+    Review --> Human[Human reviews a proposed patch]
+    Human --> Export[Download patch; no automatic application]
+```
+
+The browser mode does not run repository analyzers or an LLM. The full scanner workspace at `/workspace` retains this backend architecture:
+
 ```mermaid
 sequenceDiagram
     participant Browser

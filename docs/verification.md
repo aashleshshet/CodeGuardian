@@ -1,5 +1,21 @@
 # Verification record
 
+## Public browser checker — 2026-11-13
+
+The public `/` route now checks pasted/uploaded code without an account, repository connection or API. The full authenticated scanner workspace moved to `/workspace`, including its OAuth return target. Public results come from actual bounded browser rules, not fabricated findings or a remote model.
+
+| Check | Evidence |
+| --- | --- |
+| Analyzer contracts | 10 tests pass for positive/negative patterns, comments/literals, language gates, input limits, finding cap, non-execution, redaction and bounded patches |
+| Browser regression | All eight scenarios pass: three public-checker flows and five existing full-workspace flows |
+| Production policy | All three checker scenarios pass against the production build, including real Web Worker execution and the loaded Monaco viewer under production CSP |
+| Privacy/export | Synthetic source is absent from request bodies/URLs and local storage; downloaded JSON excludes the synthetic credential; patch export requires a human acknowledgement |
+| Existing login | OAuth state/PKCE/session/logout contract passes with the new `/workspace#integrations` return path |
+| Build | Next.js production build, TypeScript and production DOMPurify bundle verification pass |
+| Visual finish | Dark results, light empty state, tablet and mobile renders inspected; independent finish review found no material issue; reduced-motion and overflow assertions pass |
+
+The design detector could not run because its engine was unavailable; manual rendered inspection and an independent visual reviewer were used. Evidence is saved under ignored `.cache/screenshots`; the README contains the production-build checker screenshot. Browser checks do not execute Semgrep/Bandit or an LLM and cannot establish exploitability or complete security coverage. See [checker behavior and reproduction](code-checker.md).
+
 ## Device-only installation — 2026-11-12
 
 The current installation runs at `http://localhost:3000` on the user's Mac, using a project-scoped Lima VM and Docker Compose. No Oracle host or cloud backend was provisioned. The existing Vercel deployment remains separate and has not been connected to this private local stack.
@@ -40,6 +56,6 @@ The initial upgrade CI run passed PostgreSQL, all application tests and the offl
 
 At the time of these earlier cloud checks, Docker and a model endpoint were unavailable on the workstation. The device-only verification above supersedes those local limitations. Cloud backend and GitHub App activation still require the smoke tests in [deployment.md](deployment.md). Mocked GitHub/model tests validate application contracts, not external service configuration.
 
-The Vercel frontend has no fabricated fallback data. Without a configured API, it presents a service-setup notice. The test harness resides only in `backend/tests/e2e_app.py`, refuses non-test environments and is excluded from production images.
+The advanced `/workspace` route has no fabricated fallback data. Without a configured API, it presents a service-setup notice. The public `/` checker now works independently of that API. The test harness resides only in `backend/tests/e2e_app.py`, refuses non-test environments and is excluded from production images.
 
 Reproduce checks using the commands in [README.md](../README.md). Keep the scanner-data manifest when comparing advisory results: public databases evolve independently of the pinned executable versions.

@@ -4,13 +4,15 @@
 
 CodeGuardian analyzes authorized Python, JavaScript, and TypeScript repositories with real security tools. It keeps analyzer evidence separate from potential vulnerabilities and optional AI guidance. Suggested changes remain reviewable, untested patches that a human must approve before exporting.
 
-**Run on your device:** the [local setup guide](docs/local.md) starts the entire application at `http://localhost:3000`, with local access-key authentication and ZIP uploads. No Oracle account, GitHub App or cloud backend is required. Use the dedicated local Docker stack to keep source and scan results on your machine. Optional Qwen2.5-Coder explanations run through Ollama inside the private local network.
+**Check code immediately:** open the [website](https://codeguardianxweb.vercel.app), paste Python, JavaScript or TypeScript, or choose a source file up to 200 KiB. No account or GitHub connection is needed. The public checker runs bounded lexical rules in a browser worker, displays redacted line-level findings, and exports reports or human-reviewed patch suggestions. It never submits source to a server. These quick checks do not run Semgrep, Bandit, dependency scanners or an AI model; they are not a complete security audit.
+
+**Run the full scanners on your device:** the [local setup guide](docs/local.md) starts the entire application at `http://localhost:3000/workspace`, with local access-key authentication and ZIP uploads. No Oracle account, GitHub App or cloud backend is required. Use the dedicated local Docker stack to keep source and scan results on your machine. Optional Qwen2.5-Coder explanations run through Ollama inside the private local network.
 
 [Website](https://codeguardianxweb.vercel.app) · [Deployment](docs/deployment.md) · [Architecture](docs/architecture.md) · [Security model](SECURITY.md) · [Verification](docs/verification.md)
 
-![CodeGuardian sign-in and onboarding](docs/images/welcome.png)
+![CodeGuardian private code checker](docs/images/checker.png)
 
-> **Deployment status:** the complete device-only stack supports local sign-in and archive scanning. The existing Vercel frontend remains a separate, unconfigured cloud deployment. Cloud GitHub sign-in and repository scanning require a reachable backend and GitHub App credentials. There is no production demo account, fixture workspace, or fabricated activity.
+> **Deployment status:** the public code checker works on Vercel without backend configuration. The existing advanced workspace is preserved at `/workspace` for the on-device Docker stack. Its optional cloud integrations still require a backend and GitHub App configuration. Example code is loaded only by explicit request and its findings are computed when you run a check.
 
 ## What works
 
@@ -47,7 +49,7 @@ pnpm install --frozen-lockfile
 pnpm dev
 ```
 
-Open `http://127.0.0.1:3000`. Without `API_URL`, the landing page explains that service setup is pending. For actual sign-in and imports, follow the [Docker deployment guide](docs/deployment.md).
+Open `http://127.0.0.1:3000` to check code immediately. The public checker needs no `API_URL`. For full scanner jobs, sign-in and archive imports at `/workspace`, follow the [local setup guide](docs/local.md). See [browser checker behavior and limits](docs/code-checker.md).
 
 ## Run the test suite
 
@@ -60,6 +62,7 @@ export PATH="$PWD/.venv/bin:$PWD/.cache/tools:$PATH"
 python scripts/install_scanners.py --destination .cache/tools
 python scripts/update_scanner_data.py --cache-dir .cache/scanner-data
 RUN_ALL_SCANNERS=true SCANNER_CACHE="$PWD/.cache/scanner-data" pytest backend/tests -q
+pnpm test:browser-analysis
 pnpm typecheck
 pnpm build
 pnpm exec playwright install chromium
@@ -108,7 +111,7 @@ Optional advisory enrichment is bounded and best-effort. Secret detection cannot
 
 ```text
 app/                    Next.js routes and same-origin API proxy
-components/             Connected workspace, landing, source/diff viewer
+components/             Private code checker, connected workspace, source/diff viewer
 backend/app/            API, authorization, jobs, adapters, AI, lifecycle
 backend/migrations/     Alembic revisions
 backend/rules/          Application-owned analyzer configurations

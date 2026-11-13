@@ -117,7 +117,7 @@ def github_callback(request: Request, code: str, state: str, db: Session = Depen
     db.add(user)
     db.commit()
     db.refresh(user)
-    response = RedirectResponse(cfg.public_url + "/#integrations", status_code=303)
+    response = RedirectResponse(cfg.public_url + "/workspace#integrations", status_code=303)
     response.delete_cookie("cg_oauth", path="/")
     # Rotate any prior browser session to prevent accumulating credentials after reconnect.
     old = request.cookies.get("cg_session")

@@ -33,7 +33,7 @@ export default function CodeViewer({source, path, finding, theme, patch}: {sourc
     setLoaded(false); setFailed(false);
     loadMonaco().then(monaco => {
       if (dead || !el.current) return;
-      const language = path.endsWith(".py") ? "python" : path.endsWith(".ts") || path.endsWith(".tsx") ? "typescript" : path.endsWith(".js") ? "javascript" : "plaintext";
+      const language = path.endsWith(".py") ? "python" : path.endsWith(".ts") || path.endsWith(".tsx") ? "typescript" : path.endsWith(".js") || path.endsWith(".jsx") ? "javascript" : "plaintext";
       const opts = {theme: theme === "light" ? "vs" : "guardian-dark", fontFamily: "IBM Plex Mono, monospace", fontSize: 12, lineHeight: 24, minimap: {enabled: false}, scrollBeyondLastLine: false, readOnly: true, domReadOnly: true, renderLineHighlight: "all" as const, padding: {top: 18}, overviewRulerLanes: 0, hideCursorInOverviewRuler: true, automaticLayout: true, contextmenu: false, wordWrap: "on" as const, lineNumbersMinChars: 3, glyphMargin: true, folding: false, ariaLabel: patch ? "Review proposed patch diff" : `Source code for ${path}`};
       if (patch) {
         const original = monaco.editor.createModel(patch.original, language);

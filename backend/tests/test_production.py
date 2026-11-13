@@ -262,6 +262,7 @@ def test_oauth_login_state_pkce_and_logout(client, monkeypatch):
     monkeypatch.setattr(github,"client",lambda token:IdentityClient())
     result=client.get(f"/auth/github/callback?code=valid-code&state={state}",follow_redirects=False)
     assert result.status_code==303
+    assert result.headers["location"] == cfg.public_url + "/workspace#integrations"
     identity=client.get("/auth/me").json()
     assert identity["login"]=="real-login"
     assert "httponly" in result.headers["set-cookie"].lower()

@@ -11,7 +11,7 @@ From the repository directory, using the existing Python 3.12 environment:
 .venv/bin/python scripts/local_setup.py up
 ```
 
-Open **http://localhost:3000**. Copy the access key from `.cache/local/access-key.txt` into the masked **Local access key** field. This is a generated local password, not a GitHub token. Do not commit or share it. The setup script stores this file and `.cache/local/compose.env` with owner-only permissions and does not print their contents. Re-running setup preserves credentials and data.
+Open **http://localhost:3000/workspace** for the full local scanner workspace. The root page at **http://localhost:3000** is the account-free browser code checker. Copy the access key from `.cache/local/access-key.txt` into the masked **Local access key** field. This is a generated local password, not a GitHub token. Do not commit or share it. The setup script stores this file and `.cache/local/compose.env` with owner-only permissions and does not print their contents. Re-running setup preserves credentials and data.
 
 Choose **Review a source archive**, select your ZIP and confirm that you are authorized to scan it. Results, source review, filters, explanations, suggested diffs, reports and history use the existing application. No fixture repository is preloaded into the workspace.
 

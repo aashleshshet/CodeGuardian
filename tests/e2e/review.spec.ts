@@ -1,7 +1,7 @@
 import { test, expect, type Page } from "@playwright/test";
-async function signIn(page:Page, scan=false){const r=await page.request.post("/api/backend/test/session",{headers:{Origin:"http://127.0.0.1:3001"},data:{scan}});expect(r.ok()).toBeTruthy();const data=await r.json();await page.goto("/");await expect(page.getByRole("heading",{name:"Your security, in focus."})).toBeVisible();return data;}
+async function signIn(page:Page, scan=false){const r=await page.request.post("/api/backend/test/session",{headers:{Origin:"http://127.0.0.1:3001"},data:{scan}});expect(r.ok()).toBeTruthy();const data=await r.json();await page.goto("/workspace");await expect(page.getByRole("heading",{name:"Your security, in focus."})).toBeVisible();return data;}
 test("public landing is honest, responsive, and respects reduced motion",async({page})=>{
- await page.goto("/");await expect(page.getByRole("heading",{name:"See the risk. Own the fix."})).toBeVisible();await expect(page.getByText("Sign-in is not available yet",{exact:true})).toBeVisible();await expect(page.getByText("Demo workspace")).toHaveCount(0);
+ await page.goto("/workspace");await expect(page.getByRole("heading",{name:"See the risk. Own the fix."})).toBeVisible();await expect(page.getByText("Sign-in is not available yet",{exact:true})).toBeVisible();await expect(page.getByText("Demo workspace")).toHaveCount(0);
  await page.screenshot({path:".cache/screenshots/welcome-dark.png",fullPage:true,animations:"disabled"});
  await page.getByRole("button",{name:"Switch to light theme"}).click();await expect(page.locator("html")).toHaveAttribute("data-theme","light");await page.screenshot({path:".cache/screenshots/welcome-light.png",fullPage:true,animations:"disabled"});
  await page.setViewportSize({width:390,height:844});await page.emulateMedia({reducedMotion:"reduce"});await expect(page.getByRole("heading",{name:"See the risk. Own the fix."})).toBeVisible();expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();expect(await page.locator(".signin-panel").evaluate(el=>getComputedStyle(el).animationName)).toBe("none");await page.screenshot({path:".cache/screenshots/welcome-mobile.png",fullPage:true,animations:"disabled"});
@@ -11,7 +11,7 @@ test("GitHub sign-in requires healthy services and clears stale configuration on
  let credentials=true;
  await page.route("**/api/backend/capabilities",route=>route.fulfill({json:{github:credentials,llm:false,checks:false,repository_writes:false,scanner_mode:"docker"}}));
  await page.route("**/api/backend/ready",route=>route.fulfill({status:ready?200:503,json:{status:ready?"ready":"unavailable"}}));
- await page.goto("/");
+ await page.goto("/workspace");
  const signIn=page.getByRole("link",{name:"Continue with GitHub"});
  await expect(page.getByText("The review service is not ready. Please try again shortly.",{exact:true})).toBeVisible();
  await expect(signIn).toHaveCount(0);
@@ -33,7 +33,7 @@ test("new account has empty real data and usable settings",async({page})=>{
 test("local sign-in uses a masked key and cannot bypass the backend auth mode",async({page})=>{
  await page.route("**/api/backend/capabilities",route=>route.fulfill({json:{github:false,local_auth:true,llm:false,checks:false,repository_writes:false,scanner_mode:"docker"}}));
  await page.route("**/api/backend/ready",route=>route.fulfill({json:{status:"ready"}}));
- await page.goto("/");
+ await page.goto("/workspace");
  const key=page.getByLabel("Local access key",{exact:true});
  await expect(key).toHaveAttribute("type","password");
  await expect(page.getByRole("link",{name:"Continue with GitHub"})).toHaveCount(0);
