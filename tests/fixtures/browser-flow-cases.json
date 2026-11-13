@@ -1,0 +1,158 @@
+[
+  {
+    "name": "aliased command API",
+    "language": "typescript",
+    "source": "import {exec as run} from \"node:child_process\";\nconst command = \"cat \" + req.query.file;\nrun(command);",
+    "expected_cwe": "CWE-78"
+  },
+  {
+    "name": "query through helper return",
+    "language": "typescript",
+    "source": "function build(id: string) { return \"SELECT * FROM users WHERE id=\" + id; }\nconst query = build(req.query.id);\ndb.query(query);",
+    "expected_cwe": "CWE-89"
+  },
+  {
+    "name": "multiline SQL execution",
+    "language": "javascript",
+    "source": "const id = req.body.id;\nconst query = `SELECT * FROM accounts WHERE id = ${id}`;\ndb.query(\n query\n);",
+    "expected_cwe": "CWE-89"
+  },
+  {
+    "name": "DOM input into HTML",
+    "language": "javascript",
+    "source": "const value = location.hash;\nconst markup = \"<p>\" + value + \"</p>\";\ndocument.body.innerHTML = markup;",
+    "expected_cwe": "CWE-79"
+  },
+  {
+    "name": "HTTP target from input",
+    "language": "typescript",
+    "source": "const target = req.query.url;\nfetch(target);",
+    "expected_cwe": "CWE-918"
+  },
+  {
+    "name": "filesystem target from input",
+    "language": "typescript",
+    "source": "import {readFileSync as read} from \"node:fs\";\nconst target = req.query.filename;\nread(target);",
+    "expected_cwe": "CWE-22"
+  },
+  {
+    "name": "redirect destination from input",
+    "language": "javascript",
+    "source": "const destination = req.query.next;\nres.redirect(destination);",
+    "expected_cwe": "CWE-601"
+  },
+  {
+    "name": "raw React HTML",
+    "language": "typescript",
+    "source": "const html = req.body.html;\nconst view = <div dangerouslySetInnerHTML={{__html: html}} />;",
+    "expected_cwe": "CWE-79"
+  },
+  {
+    "name": "safe bound SQL",
+    "language": "typescript",
+    "source": "const id = req.query.id;\ndb.query(\"SELECT * FROM users WHERE id = $1\", [id]);",
+    "expected_cwe": null
+  },
+  {
+    "name": "safe text node",
+    "language": "javascript",
+    "source": "document.body.textContent = location.hash;",
+    "expected_cwe": null
+  },
+  {
+    "name": "recognized HTML sanitizer",
+    "language": "typescript",
+    "source": "import DOMPurify from \"dompurify\";\nconst safe = DOMPurify.sanitize(location.hash);\ndocument.body.innerHTML = safe;",
+    "expected_cwe": null
+  },
+  {
+    "name": "constant fetch target",
+    "language": "javascript",
+    "source": "fetch(\"https://example.com/status\");",
+    "expected_cwe": null
+  },
+  {
+    "name": "argument list without shell",
+    "language": "typescript",
+    "source": "import {execFile} from \"node:child_process\";\nexecFile(\"/usr/bin/printf\", [\"%s\", req.query.message]);",
+    "expected_cwe": null
+  },
+  {
+    "name": "inert documentation",
+    "language": "javascript",
+    "source": "const example = \"eval(input); element.innerHTML = payload\";\n// exec(req.query.command)",
+    "expected_cwe": null
+  },
+  {
+    "name": "helper with safe constant",
+    "language": "javascript",
+    "source": "function query(value) { return \"SELECT * FROM users WHERE role=\" + value; }\ndb.query(query(\"admin\"));",
+    "expected_cwe": null
+  },
+  {
+    "name": "multiline Python shell",
+    "language": "python",
+    "source": "import subprocess as sp\nvalue = request.args.get(\"filename\")\nsp.run(\n \"cat \" + value,\n shell=True\n)",
+    "expected_cwe": "CWE-78"
+  },
+  {
+    "name": "Python query alias",
+    "language": "python",
+    "source": "from flask import request\nvalue = request.args.get(\"id\")\nquery = f\"SELECT * FROM users WHERE id={value}\"\ncursor.execute(\n query\n)",
+    "expected_cwe": "CWE-89"
+  },
+  {
+    "name": "aliased pickle",
+    "language": "python",
+    "source": "from pickle import loads as decode\nraw = request.data\ndecode(raw)",
+    "expected_cwe": "CWE-502"
+  },
+  {
+    "name": "Python HTTP input",
+    "language": "python",
+    "source": "import requests as client\nurl = request.args.get(\"url\")\nclient.get(url)",
+    "expected_cwe": "CWE-918"
+  },
+  {
+    "name": "Python path input",
+    "language": "python",
+    "source": "name = input(\"filename\")\nopen(name)",
+    "expected_cwe": "CWE-22"
+  },
+  {
+    "name": "Python template source",
+    "language": "python",
+    "source": "from flask import render_template_string, request\ntemplate = request.args.get(\"template\")\nrender_template_string(template)",
+    "expected_cwe": "CWE-1336"
+  },
+  {
+    "name": "safe Python bound SQL",
+    "language": "python",
+    "source": "value = request.args.get(\"id\")\ncursor.execute(\"SELECT * FROM users WHERE id=%s\", [value])",
+    "expected_cwe": null
+  },
+  {
+    "name": "safe multiline YAML",
+    "language": "python",
+    "source": "import yaml\nvalue = yaml.load(\n payload,\n Loader=yaml.SafeLoader\n)",
+    "expected_cwe": null
+  },
+  {
+    "name": "safe Python subprocess",
+    "language": "python",
+    "source": "import subprocess\nsubprocess.run([\"/usr/bin/printf\", \"%s\", request.args.get(\"text\")], shell=False)",
+    "expected_cwe": null
+  },
+  {
+    "name": "safe constant Python HTTP",
+    "language": "python",
+    "source": "import requests\nrequests.get(\"https://example.com/status\", verify=True)",
+    "expected_cwe": null
+  },
+  {
+    "name": "Python inert docstring",
+    "language": "python",
+    "source": "\"\"\"\neval(request.args.get(\"code\"))\n\"\"\"\n# pickle.loads(data)",
+    "expected_cwe": null
+  }
+]

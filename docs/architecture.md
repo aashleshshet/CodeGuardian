@@ -5,15 +5,15 @@ The public `/` route works independently of backend configuration. Source stays 
 ```mermaid
 flowchart LR
     Input[Paste or choose a source file] --> Memory[Tab memory: at most 200 KiB]
-    Memory --> Worker[Browser Web Worker: lexical rules]
+    Memory --> Worker[Browser Web Worker: syntax parsers and bounded flow analysis]
     Worker --> Redaction[Mask detected credentials]
-    Redaction --> Review[Line-level findings and guidance]
+    Redaction --> Review[Line-level findings, input traces and guidance]
     Review --> Report[Download redacted report]
     Review --> Human[Human reviews a proposed patch]
     Human --> Export[Download patch; no automatic application]
 ```
 
-The browser mode does not run repository analyzers or an LLM. The full scanner workspace at `/workspace` retains this backend architecture:
+JavaScript/TypeScript uses the Babel parser; Python uses the Lezer grammar. Application-owned analyzers model selected inputs, assignments, imports, branches and bounded same-file calls. Static source/sink traces are potential vulnerabilities, not exploitability proofs. Parse errors expose partial coverage and retain only best-effort fallback rules. Traversal/call limits and a 15-second worker deadline bound analysis. The browser mode does not run repository analyzers or an LLM. The full scanner workspace at `/workspace` retains this backend architecture:
 
 ```mermaid
 sequenceDiagram

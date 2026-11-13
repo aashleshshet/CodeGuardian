@@ -18,9 +18,13 @@ test("public code checks need no account and keep source on the device", async (
   await expect(results).toBeVisible();
   await expect(page.getByRole("heading", {name: "Review findings", exact: true})).toBeVisible();
   await expect(page.locator(".monaco-editor").first()).toBeVisible();
+  await expect(results).toContainText("Syntax parsed · single-file analysis");
+  await expect(page.getByLabel("Evidence trace", {exact:true})).toBeVisible();
+  await page.getByRole("button", {name:/Show source at line/}).first().click();
   await expect(results.getByRole("button").first()).toBeVisible();
   await page.getByLabel("Filter severity", {exact: true}).selectOption("high");
   await page.getByLabel("Filter severity", {exact: true}).selectOption("all");
+  await page.evaluate(()=>window.scrollTo(0,0));
   await page.screenshot({path: ".cache/screenshots/checker-results-dark.png", fullPage: true, animations: "disabled"});
 
   await page.getByRole("button", {name:"Review proposed change", exact:true}).click();
@@ -44,6 +48,28 @@ test("public code checks need no account and keep source on the device", async (
   await expect(source).toHaveValue("");
   await expect(check).toBeDisabled();
   await expect(results).toHaveCount(0);
+});
+
+test("data-flow checks expose evidence and syntax failures stay partial", async ({page}) => {
+  await page.goto("/");
+  const input=page.getByLabel("Source code",{exact:true});
+  await input.fill('import {exec as run} from "node:child_process";\nconst cmd = "cat " + req.query.file;\nrun(cmd);');
+  await page.getByRole("button",{name:"Check code",exact:true}).click();
+  await expect(page.getByTestId("checker-results")).toContainText("CWE-78");
+  await expect(page.getByTestId("checker-results")).toContainText("Input-to-operation flow detected");
+  await expect(page.getByLabel("Evidence trace",{exact:true})).toContainText("L2");
+  await expect(page.locator(".monaco-editor").first()).toBeVisible();
+  await page.getByRole("button",{name:/Show source at line/}).first().scrollIntoViewIfNeeded();
+  await page.evaluate(()=>window.scrollTo(0,0));
+  await page.screenshot({path:".cache/screenshots/checker-flow.png",fullPage:true,animations:"disabled"});
+  await page.setViewportSize({width:390,height:844});
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBe(true);
+  await page.screenshot({path:".cache/screenshots/checker-flow-mobile.png",fullPage:true,animations:"disabled"});
+  await page.getByRole("button",{name:"Edit code",exact:true}).click();
+  await input.fill('const input = ; function (');
+  await page.getByRole("button",{name:"Check code",exact:true}).click();
+  await expect(page.getByTestId("checker-results")).toContainText("Partial analysis — review required");
+  await expect(page.getByTestId("checker-results")).not.toContainText("Syntax parsed");
 });
 
 test("source-file checks export redacted findings and reject oversized uploads", async ({page}) => {

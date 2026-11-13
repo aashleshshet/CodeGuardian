@@ -9,26 +9,29 @@
     "start": "next start --hostname 0.0.0.0",
     "typecheck": "tsc --noEmit",
     "test:e2e": "playwright test",
-    "test:browser-analysis": "node --experimental-strip-types scripts/test-browser-analysis.mjs"
+    "test:browser-analysis": "node --experimental-strip-types --test scripts/test-browser-analysis.mjs scripts/test-javascript-analysis.mjs scripts/test-python-analysis.mjs scripts/test-flow-benchmark.mjs",
+    "benchmark:analysis": "node --experimental-strip-types scripts/benchmark-browser-analysis.mjs"
   },
   "dependencies": {
+    "@babel/parser": "8.1.2",
+    "@fontsource/ibm-plex-mono": "^5.2.7",
+    "@fontsource/public-sans": "^5.2.7",
+    "@lezer/python": "1.1.19",
+    "@monaco-editor/react": "^4.7.0",
+    "dompurify": "3.4.17",
+    "lucide-react": "^0.577.0",
+    "monaco-editor": "^0.55.1",
     "next": "^16.0.0",
     "react": "^19.2.0",
-    "react-dom": "^19.2.0",
-    "@monaco-editor/react": "^4.7.0",
-    "monaco-editor": "^0.55.1",
-    "lucide-react": "^0.577.0",
-    "@fontsource/public-sans": "^5.2.7",
-    "@fontsource/ibm-plex-mono": "^5.2.7",
-    "dompurify": "3.4.17"
+    "react-dom": "^19.2.0"
   },
   "devDependencies": {
-    "typescript": "^5.9.3",
+    "@playwright/test": "^1.58.0",
+    "@tailwindcss/postcss": "^4.1.18",
     "@types/node": "^22.19.0",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
-    "@tailwindcss/postcss": "^4.1.18",
     "tailwindcss": "^4.1.18",
-    "@playwright/test": "^1.58.0"
+    "typescript": "^5.9.3"
   }
 }

@@ -6,7 +6,7 @@ import {analyzeCode, redactCode, MAX_CODE_BYTES} from '../lib/browser-analysis.t
 const rules = (source, language='typescript') => analyzeCode(source, language, 'review.ts').findings.map(f=>f.ruleId);
 
 test('detects JavaScript sinks and distinguishes unverified evidence from suggestions',()=>{
- const result=analyzeCode('const query = `SELECT * FROM users WHERE id = ${id}`;\neval(input);\nelement.innerHTML = payload;\nexec(command);\nconst tls = {rejectUnauthorized: false};\ncrypto.createHash("md5");','typescript','../private/review.ts');
+ const result=analyzeCode('import {exec} from "node:child_process"; const query = `SELECT * FROM users WHERE id = ${id}`; db.query(query);\neval(input);\nelement.innerHTML = payload;\nexec(command);\nconst tls = {rejectUnauthorized: false};\ncrypto.createHash("md5");','typescript','../private/review.ts');
  assert.deepEqual(result.findings.map(f=>f.ruleId),['sql-interpolation','dynamic-eval','javascript-innerhtml','javascript-shell','javascript-tls-verification','javascript-weak-hash']);
  assert.equal(result.filename,'review.ts');
  assert.ok(result.findings.every(f=>f.classification!=='verified_analyzer'));
@@ -16,7 +16,7 @@ test('detects JavaScript sinks and distinguishes unverified evidence from sugges
 });
 
 test('detects Python risks without executing the submitted code',()=>{
- const source='query = f"SELECT * FROM users WHERE id = {user_id}"\nsubprocess.run(cmd, shell=True)\nyaml.load(payload)\npickle.loads(payload)\nrequests.get(url, verify=False)\nhashlib.sha1(value)\nraise RuntimeError("must not run")';
+ const source='query = f"SELECT * FROM users WHERE id = {user_id}"; cursor.execute(query)\nsubprocess.run(cmd, shell=True)\nyaml.load(payload)\npickle.loads(payload)\nrequests.get(url, verify=False)\nhashlib.sha1(value)\nraise RuntimeError("must not run")';
  assert.deepEqual(rules(source,'python'),['sql-interpolation','python-shell','python-pickle','python-unsafe-yaml','python-tls-verification','python-weak-hash']);
 });
 
@@ -74,7 +74,7 @@ test('bounds bytes, rejects invalid input and reports a match cap honestly',()=>
  assert.throws(()=>redactCode('é'.repeat(MAX_CODE_BYTES)),/200 KiB/);
  const result=analyzeCode('eval(input);\n'.repeat(120),'javascript','many.js');
  assert.equal(result.findings.length,100);
- assert.ok(result.limitations.some(x=>x.includes('first 100')));
+ assert.ok(result.limitations.some(x=>x.includes('100 findings')));
 });
 
 test('never evaluates malicious source or uses a source-provided filename as a path',()=>{

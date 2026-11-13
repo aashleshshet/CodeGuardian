@@ -4,7 +4,7 @@
 
 CodeGuardian analyzes authorized Python, JavaScript, and TypeScript repositories with real security tools. It keeps analyzer evidence separate from potential vulnerabilities and optional AI guidance. Suggested changes remain reviewable, untested patches that a human must approve before exporting.
 
-**Check code immediately:** open the [website](https://codeguardianxweb.vercel.app), paste Python, JavaScript or TypeScript, or choose a source file up to 200 KiB. No account or GitHub connection is needed. The public checker runs bounded lexical rules in a browser worker, displays redacted line-level findings, and exports reports or human-reviewed patch suggestions. It never submits source to a server. These quick checks do not run Semgrep, Bandit, dependency scanners or an AI model; they are not a complete security audit.
+**Check code immediately:** open the [website](https://codeguardianxweb.vercel.app), paste Python, JavaScript or TypeScript, or choose a source file up to 200 KiB. No account or GitHub connection is needed. The public checker parses source and follows selected input flows in a browser worker, displays redacted line-level findings and source-to-sink traces, and exports reports or human-reviewed patch suggestions. It never submits source to a server. These quick checks do not run Semgrep, Bandit, dependency scanners or an AI model; they are not a complete security audit.
 
 **Run the full scanners on your device:** the [local setup guide](docs/local.md) starts the entire application at `http://localhost:3000/workspace`, with local access-key authentication and ZIP uploads. No Oracle account, GitHub App or cloud backend is required. Use the dedicated local Docker stack to keep source and scan results on your machine. Optional Qwen2.5-Coder explanations run through Ollama inside the private local network.
 
@@ -15,6 +15,8 @@ CodeGuardian analyzes authorized Python, JavaScript, and TypeScript repositories
 > **Deployment status:** the public code checker works on Vercel without backend configuration. The existing advanced workspace is preserved at `/workspace` for the on-device Docker stack. Its optional cloud integrations still require a backend and GitHub App configuration. Example code is loaded only by explicit request and its findings are computed when you run a check.
 
 ## What works
+
+- Account-free browser analysis with JavaScript/TypeScript and Python syntax parsers, bounded single-file input tracing, source/sink evidence, CWE and versioned OWASP mappings, explicit partial-coverage warnings, and redacted exports.
 
 - GitHub App OAuth with PKCE and one-use state, encrypted rotating access/refresh tokens, opaque sessions, CSRF and tenant authorization.
 - Selected public/private repository access; multiple installations; metadata synchronization; branch and commit selection; disconnect/revocation handling.
@@ -63,6 +65,7 @@ python scripts/install_scanners.py --destination .cache/tools
 python scripts/update_scanner_data.py --cache-dir .cache/scanner-data
 RUN_ALL_SCANNERS=true SCANNER_CACHE="$PWD/.cache/scanner-data" pytest backend/tests -q
 pnpm test:browser-analysis
+pnpm benchmark:analysis
 pnpm typecheck
 pnpm build
 pnpm exec playwright install chromium

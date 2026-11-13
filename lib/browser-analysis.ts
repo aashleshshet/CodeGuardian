@@ -1,166 +1,74 @@
-/** Small, offline pattern checks. This module never executes or transmits source. */
-export type BrowserLanguage = "python" | "javascript" | "typescript";
-export type BrowserSeverity = "high" | "medium" | "low";
-export type BrowserFinding = {
-  id: string; title: string; severity: BrowserSeverity; line: number; endLine: number;
-  ruleId: string; cwe: string; message: string; remediation: string; conditions: string[];
-  classification: "potential_vulnerability" | "secure_coding_suggestion";
-  patch?: {original: string; modified: string; diff: string; caveat: string};
+/** Offline syntax and bounded single-file data-flow analysis. Source is never executed. */
+import {analyzeCode as analyzePatterns} from "./lexical-analysis.ts";
+import {analyzeJavaScript} from "./javascript-analysis.ts";
+import {analyzePython} from "./python-analysis.ts";
+import {owaspCategory} from "./owasp.ts";
+import type {FlowStep, StructuralResult} from "./analysis-types.ts";
+import type {BrowserFinding as PatternFinding, BrowserLanguage, BrowserSeverity} from "./lexical-analysis.ts";
+export {redactCode, MAX_CODE_BYTES} from "./lexical-analysis.ts";
+export type {BrowserLanguage, BrowserSeverity};
+
+export type BrowserFinding = PatternFinding & {
+  evidence: "data_flow" | "structural" | "pattern";
+  owasp: string;
+  trace?: FlowStep[];
 };
 export type BrowserAnalysis = {
-  findings: BrowserFinding[]; redactedSource: string; language: BrowserLanguage;
-  filename: string; linesAnalyzed: number; limitations: string[];
+  findings: BrowserFinding[];
+  redactedSource: string;
+  language: BrowserLanguage;
+  filename: string;
+  linesAnalyzed: number;
+  limitations: string[];
+  coverage: {syntax: "parsed" | "partial"; scope: "single_file"; diagnostics: {line:number; message:string}[]};
+  engineVersion: string;
 };
-export const MAX_CODE_BYTES = 200 * 1024;
-const MAX_FINDINGS = 100;
-
-type SecretRange = {start: number; end: number; line: number; endLine: number};
-function secretRanges(source: string): SecretRange[] {
-  const patterns: [RegExp, number][] = [
-    [/-----BEGIN (?:RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----[\s\S]*?-----END (?:RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----/gd, 0],
-    [/\b(?:gh[pousr]_[A-Za-z0-9]{20,255}|github_pat_[A-Za-z0-9_]{30,255})\b/gd, 0],
-    [/\b(?:AKIA|ASIA)[A-Z0-9]{16}\b/gd, 0],
-    [/\bsk[-_](?:live[-_]|test[-_]|proj-)?[A-Za-z0-9_-]{20,255}\b/gd, 0],
-    [/\b[\w-]{0,64}(?:password|passwd|secret|api[_-]?key|access[_-]?token|auth[_-]?token|private[_-]?key)["']?\s*[:=]\s*["']([^"'\r\n]{8,})["']/gid, 1],
-    [/(?:https?|postgres(?:ql)?|mysql|redis):\/\/[^\s:/]+:([^@\s]+)@/gid, 1],
-    [/\bbearer\s+([A-Za-z0-9._~-]{16,4096})/gid, 1],
-    [/\beyJ[A-Za-z0-9_-]{8,4096}\.[A-Za-z0-9_-]{8,4096}\.[A-Za-z0-9_-]{8,4096}\b/gd, 0],
-  ];
-  const found: SecretRange[] = [];
-  for (const [pattern, group] of patterns) {
-    for (const match of source.matchAll(pattern)) {
-      const value = match[group];
-      if (value.includes("[REDACTED]") || /^(\$\{|\{\{|<)/.test(value)) continue;
-      const [start, end] = match.indices![group];
-      if (found.some(range => start < range.end && end > range.start)) continue;
-      const line = source.slice(0, start).split("\n").length;
-      found.push({start, end, line, endLine: line + (value.match(/\n/g)?.length || 0)});
-    }
-  }
-  return found.sort((a, b) => a.start - b.start);
-}
-
-function maskSecrets(source: string, ranges: SecretRange[]): string {
-  let redacted = source;
-  for (const {start, end} of [...ranges].reverse()) {
-    redacted = redacted.slice(0, start) + "[REDACTED]" + "\n".repeat((source.slice(start, end).match(/\n/g) || []).length) + redacted.slice(end);
-  }
-  return redacted;
-}
-
-/** Use before displaying or exporting source; novel/encoded secrets can be missed. */
-export function redactCode(source: string): string {
-  if (new TextEncoder().encode(source).length > MAX_CODE_BYTES) throw new Error("Choose a file smaller than 200 KiB.");
-  return maskSecrets(source, secretRanges(source));
-}
-
-/** Preserve positions, retaining string delimiters but hiding their contents. */
-function lexicalViews(source: string, language: BrowserLanguage): {code: string; withoutComments: string} {
-  const code = source.split("");
-  const withoutComments = source.split("");
-  let state: "code" | "line" | "block" | "string" = "code";
-  let quote = "";
-  let triple = false;
-  const hide = (at: number, comment: boolean) => {
-    if (source[at] !== "\n") {code[at] = " "; if (comment) withoutComments[at] = " ";}
-  };
-  for (let i = 0; i < source.length; i++) {
-    const char = source[i], next = source[i + 1];
-    if (state === "line") {
-      hide(i, true); if (char === "\n") state = "code";
-    } else if (state === "block") {
-      hide(i, true);
-      if (char === "*" && next === "/") {hide(++i, true); state = "code";}
-    } else if (state === "string") {
-      if (char === "\\") {hide(i, false); if (i + 1 < source.length) hide(++i, false);}
-      else if (triple && source.slice(i, i + 3) === quote.repeat(3)) {
-        code[i] = quote; hide(i + 1, false); hide(i + 2, false); i += 2; state = "code";
-      } else if (!triple && char === quote) {state = "code";}
-      else hide(i, false);
-    } else if (language === "python" && char === "#") {hide(i, true); state = "line";}
-    else if (language !== "python" && char === "/" && next === "/") {hide(i, true); hide(++i, true); state = "line";}
-    else if (language !== "python" && char === "/" && next === "*") {hide(i, true); hide(++i, true); state = "block";}
-    else if (char === "'" || char === '"' || (language !== "python" && char === "`")) {
-      quote = char; triple = language === "python" && source.slice(i, i + 3) === char.repeat(3);
-      if (triple) {hide(i + 1, false); hide(i + 2, false); i += 2;}
-      state = "string";
-    }
-  }
-  return {code: code.join(""), withoutComments: withoutComments.join("")};
-}
-
-function filenameFor(name: string, language: BrowserLanguage): string {
-  const basename = name.replace(/\\/g, "/").split("/").at(-1) || "";
-  const safe = redactCode(basename.slice(0, 200)).replace(/[^A-Za-z0-9_.-]/g, "_").slice(0, 96);
-  return safe || `untitled.${language === "python" ? "py" : language === "typescript" ? "ts" : "js"}`;
-}
 
 const LIMITATIONS = [
-  "These are browser-based pattern checks, not Semgrep, Bandit, Gitleaks, a dependency audit, or an AI model.",
-  "A match needs human review. No matches do not establish that code is secure.",
-  "No parsing, data-flow analysis, cross-file context or code execution is performed. Multiline constructs, aliases and encoded secrets may be missed.",
+  "Local syntax and bounded single-file data-flow checks; not Semgrep, Bandit, Gitleaks, a dependency audit, or an AI model.",
+  "Findings require human review. A traced flow is static evidence, not proof of runtime exploitability. No matches do not establish that code is secure.",
+  "Cross-file dependencies, runtime behavior, authentication/authorization logic, business rules and all possible paths are not analyzed. Reflection, complex object aliases and unsupported framework APIs can be missed.",
+  "Data-flow analysis approximates branches and calls. Sanitizers and allowlists must be reviewed in the actual application context. Unknown, encoded and split credentials may be missed.",
 ];
 
-export function analyzeCode(source: string, language: BrowserLanguage, filename: string): BrowserAnalysis {
-  if (!["python", "javascript", "typescript"].includes(language)) throw new Error("Choose Python, JavaScript or TypeScript.");
-  if (new TextEncoder().encode(source).length > MAX_CODE_BYTES) throw new Error("Choose a file smaller than 200 KiB.");
-  if (!source.trim()) throw new Error("Paste code or choose a source file first.");
-  const ranges = secretRanges(source);
-  const redactedSource = maskSecrets(source, ranges);
-  const safeFilename = filenameFor(filename, language);
-  const {code, withoutComments} = lexicalViews(source, language);
-  const lines = source.split("\n"), active = code.split("\n"), commentsRemoved = withoutComments.split("\n");
-  const findings: BrowserFinding[] = [];
-  let capped = false;
-  const add = (line: number, ruleId: string, title: string, severity: BrowserSeverity, cwe: string, message: string, remediation: string, conditions: string[], extra: Partial<BrowserFinding> = {}) => {
-    if (findings.length >= MAX_FINDINGS) {capped = true; return;}
-    if (findings.some(f => f.line === line && f.ruleId === ruleId)) return;
-    findings.push({id: `${ruleId}-${line}`, line, endLine: line, ruleId, title, severity, cwe, message, remediation, conditions, classification: "potential_vulnerability", ...extra});
+export function analyzeCode(source:string, language:BrowserLanguage, filename:string): BrowserAnalysis {
+  // This validates input and applies the existing secret detector even when parsing fails.
+  const fallback=analyzePatterns(source, language, filename);
+  let analysis: StructuralResult;
+  try {analysis=language === "python" ? analyzePython(source) : analyzeJavaScript(source,language,filename);}
+  catch {analysis={findings:[],parsed:false,truncated:true,diagnostics:[{line:1,message:"The structural analyzer could not complete. Review a smaller, complete source file."}]};}
+  const findings: BrowserFinding[]=[];
+  const add=(finding:BrowserFinding)=>{
+    const existing=findings.findIndex(f=>f.line===finding.line && (f.ruleId===finding.ruleId || (f.cwe===finding.cwe && f.ruleId!=="hardcoded-credential")));
+    if(existing<0)findings.push(finding);
+    else if(finding.evidence==="data_flow" && findings[existing].evidence!=="data_flow")findings[existing]=finding;
   };
-  for (const range of ranges) add(range.line, "hardcoded-credential", "Potential hardcoded secret", "high", "CWE-798", "A credential-shaped value was detected and redacted. Its validity has not been checked.", "Verify the credential locally. If active, revoke and rotate it, remove it from source and history, and load it from a secret store.", ["Determine whether the value is an active credential or a synthetic test value without sharing it."], {endLine: range.endLine});
-
-  for (let index = 0; index < lines.length; index++) {
-    const line = index + 1, text = commentsRemoved[index], visible = active[index];
-    if (!visible.trim()) continue;
-    const matchCode = (pattern: RegExp) => {
-      for (const match of text.matchAll(new RegExp(pattern.source, pattern.flags + "g"))) {
-        if (visible[match.index] === text[match.index]) return match;
+  const secrets=fallback.findings.filter(f=>f.ruleId==="hardcoded-credential");
+  for(const f of secrets)add({...f,evidence:"pattern",owasp:owaspCategory(f.cwe)});
+  for(const f of analysis.findings){
+    const {patchProperty,...finding}=f;
+    let patch:PatternFinding["patch"];
+    if(patchProperty && !secrets.length && !fallback.redactedSource.includes("[REDACTED]")){
+      const {start,end}=patchProperty;
+      const lineStart=source.lastIndexOf("\n",start-1)+1;
+      const newline=source.indexOf("\n",end);
+      const lineEnd=newline<0?source.length:newline;
+      if(source.slice(start,end)==="innerHTML" && !source.slice(lineStart,lineEnd).includes("\n")){
+        const original=source.slice(lineStart,lineEnd);
+        const modified=source.slice(lineStart,start)+"textContent"+source.slice(end,lineEnd);
+        const patchLine=source.slice(0,start).split("\n").length;
+        patch={original,modified,diff:`--- a/${fallback.filename}\n+++ b/${fallback.filename}\n@@ -${patchLine},1 +${patchLine},1 @@\n-${original}\n+${modified}\n`,caveat:"Renders plain text instead of HTML. Review markup-dependent behavior and test before applying."};
       }
-      return null;
-    };
-    const literal = (value: string) => /^\s*["'`]/.test(value) && !value.includes("${") && !/["'`]\s*\+/.test(value);
-    if (matchCode(/\beval\s*\(/)) add(line, "dynamic-eval", "Dynamic code evaluation", "high", "CWE-95", "An eval call can interpret its argument as executable code.", "Remove dynamic evaluation. For a JSON-only input contract, parse JSON and validate its schema; preserve error handling.", ["Trace whether untrusted input can reach eval and whether execution is required."]);
-    if (/\b(?:SELECT|INSERT|UPDATE|DELETE)\b/i.test(text)) {
-      const interpolation = language === "python" ? matchCode(/\bf["']/) : matchCode(/`/);
-      const dynamic = language === "python" ? !!interpolation || /\.format\s*\(|["']\s*[%+]\s*\w/.test(text) : !!interpolation && /\$\{/.test(text) || /["']\s*\+\s*\w/.test(text);
-      if (dynamic && /(?:=|\b(?:query|execute)\s*\()/.test(visible)) add(line, "sql-interpolation", "SQL string interpolation", "high", "CWE-89", "SQL text appears to be combined with a dynamic value. This check does not establish whether the query is executed.", "Use the database driver's bound parameter API. Keep query syntax separate from values, and allowlist dynamic table or column identifiers.", ["Confirm whether this string reaches a database call.", "Trace input provenance and use the placeholder syntax required by the actual driver."]);
     }
-    if (language === "python") {
-      if (matchCode(/\bsubprocess\.(?:run|call|Popen|check_call|check_output)\s*\(/) && /\bshell\s*=\s*True\b/.test(visible)) add(line, "python-shell", "Shell interpretation enabled", "high", "CWE-78", "A subprocess call enables shell interpretation.", "Pass a fixed executable and an argument list with shell=False. Validate arguments and reject option injection where relevant.", ["Confirm whether any command component can be influenced by untrusted input."]);
-      const system = matchCode(/\bos\.system\s*\(\s*/);
-      if (system && !literal(text.slice(system.index + system[0].length))) add(line, "python-os-system", "Dynamic shell command", "high", "CWE-78", "A dynamic value is passed to a shell command API.", "Use a library or subprocess with a fixed executable, an argument list and shell=False.", ["Check the origin of the command and each argument."]);
-      if (matchCode(/\byaml\.load\s*\(/) && !/\b(?:yaml\.)?(?:SafeLoader|CSafeLoader)\b/.test(visible)) add(line, "python-unsafe-yaml", "Unsafe YAML loading", "medium", "CWE-502", "yaml.load is used without a recognized safe loader on this line.", "Use yaml.safe_load for data-only YAML and validate the result against an expected schema.", ["Inspect surrounding lines for an explicit safe loader.", "Verify whether custom YAML objects are required."]);
-      if (matchCode(/\bpickle\.loads?\s*\(/)) add(line, "python-pickle", "Executable deserialization", "high", "CWE-502", "Pickle deserialization can invoke code encoded in a payload.", "Use a data-only format such as JSON for untrusted inputs. Do not deserialize untrusted pickle payloads.", ["Verify that the serialized data cannot be created or modified by an untrusted actor."]);
-      if (/\bverify\s*=\s*False\b/.test(visible)) add(line, "python-tls-verification", "Certificate verification disabled", "medium", "CWE-295", "A verify=False argument may disable certificate verification in an HTTP client.", "Enable certificate and hostname verification and configure the intended trusted CA bundle.", ["Confirm which API receives verify=False; unrelated APIs may use this name."]);
-      if (matchCode(/\bhashlib\.(?:md5|sha1)\s*\(/)) add(line, "python-weak-hash", "Legacy hash algorithm", "low", "CWE-327", "MD5 or SHA-1 appears in a hashing call; its security role is unknown.", "Use a current vetted algorithm for security-sensitive hashing. Use a dedicated password hashing function for passwords.", ["Distinguish a non-security checksum from a signature, password or integrity boundary."], {classification: "secure_coding_suggestion"});
-    } else {
-      const html = matchCode(/\.innerHTML\s*=\s*(?!=)/);
-      if (html && !literal(text.slice(html.index + html[0].length))) {
-        const patch = !ranges.length && !redactedSource.includes("[REDACTED]") ? (() => {
-          const original = lines[index], modified = original.slice(0, html.index) + original.slice(html.index).replace(".innerHTML", ".textContent");
-          return {original, modified, diff: `--- a/${safeFilename}\n+++ b/${safeFilename}\n@@ -${line},1 +${line},1 @@\n-${original}\n+${modified}\n`, caveat: "Renders plain text instead of HTML. Review markup-dependent behavior and test before applying."};
-        })() : undefined;
-        add(line, "javascript-innerhtml", "Untrusted HTML insertion", "high", "CWE-79", "A dynamic value is assigned to innerHTML, which interprets HTML markup.", "Prefer textContent for plain text. If HTML is required, use a maintained sanitizer appropriate to the rendering context.", ["Trace whether the assigned value can contain attacker-controlled markup.", "Check whether existing sanitization covers this exact context."], {patch});
-      }
-      const write = matchCode(/\bdocument\.write\s*\(\s*/);
-      if (write && !literal(text.slice(write.index + write[0].length))) add(line, "javascript-document-write", "Dynamic document markup", "high", "CWE-79", "document.write receives a dynamic value that may be interpreted as HTML.", "Build DOM nodes with textContent for plain text; avoid document.write.", ["Confirm whether untrusted input reaches this call."]);
-      const exec = matchCode(/(?<![\w.])(?:(?:child_process|childProcess)\.)?exec(?:Sync)?\s*\(\s*/);
-      if (exec && !literal(text.slice(exec.index + exec[0].length))) add(line, "javascript-shell", "Potential dynamic shell command", "high", "CWE-78", "An exec-style call receives a dynamic argument; this may invoke a shell.", "For Node child_process calls, prefer execFile or spawn with a fixed executable and separate arguments, without a shell.", ["Confirm that this is Node child_process rather than an unrelated function or RegExp.exec.", "Trace every argument's source and validate the allowed command."]);
-      if (/\brejectUnauthorized\s*:\s*false\b/.test(visible)) add(line, "javascript-tls-verification", "Certificate verification disabled", "medium", "CWE-295", "A TLS option disables certificate validation.", "Keep rejectUnauthorized enabled and configure the intended certificate authority.", ["Confirm whether this option reaches a TLS client."]);
-      if (matchCode(/\b(?:crypto\.)?createHash\s*\(\s*["'](?:md5|sha1)["']/i)) add(line, "javascript-weak-hash", "Legacy hash algorithm", "low", "CWE-327", "MD5 or SHA-1 appears in a hashing call; its security role is unknown.", "Use a current vetted algorithm for security-sensitive hashing and a dedicated password hasher for passwords.", ["Confirm whether this is security-sensitive rather than a non-security checksum."], {classification: "secure_coding_suggestion"});
-    }
+    add({...finding,id:`${f.ruleId}-${f.line}`,owasp:owaspCategory(f.cwe),patch});
   }
-  const order: Record<BrowserSeverity, number> = {high: 0, medium: 1, low: 2};
-  findings.sort((a, b) => order[a.severity] - order[b.severity] || a.line - b.line);
-  return {findings, redactedSource, language, filename: safeFilename, linesAnalyzed: lines.length, limitations: [...LIMITATIONS, ...(capped ? ["Only the first 100 pattern matches are shown. Review smaller portions for additional matches."] : [])]};
+  // Retain best-effort checks on invalid syntax, visibly marked as partial coverage.
+  if(!analysis.parsed)for(const f of fallback.findings)add({...f,evidence:"pattern",owasp:owaspCategory(f.cwe)});
+  const order:Record<BrowserSeverity,number>={high:0,medium:1,low:2};
+  findings.sort((a,b)=>order[a.severity]-order[b.severity]||a.line-b.line);
+  const capped=findings.length>100 || analysis.truncated || fallback.limitations.some(x=>x.includes("first 100"));
+  const diagnostics=analysis.diagnostics.slice(0,5).map(d=>({line:Math.max(1,d.line),message:d.message}));
+  return {findings:findings.slice(0,100),redactedSource:fallback.redactedSource,filename:fallback.filename,language,linesAnalyzed:fallback.linesAnalyzed,
+    limitations:[...LIMITATIONS,...(!analysis.parsed?["Syntax could not be fully parsed. Results include best-effort patterns; correct the syntax or submit a complete file and check again."]:[]),...(capped?["Analysis budget reached; at most 100 findings are shown. Review smaller portions for additional matches."]:[])],
+    coverage:{syntax:analysis.parsed&&!analysis.truncated?"parsed":"partial",scope:"single_file",diagnostics},engineVersion:"2026.11.13-flow.1"};
 }

@@ -1,5 +1,15 @@
 # Verification record
 
+## Syntax and input-flow upgrade — 2026-11-14
+
+The public checker now uses pinned Babel and Lezer parsers with application-owned bounded single-file analysis. Findings distinguish traced input flows, structural risks with unconfirmed input origins, and credential patterns. Line-level evidence traces, CWE/OWASP mappings and explicit partial-analysis states are visible in the interface. Source stays in the browser.
+
+The 26-case owned regression corpus includes 14 vulnerable snippets and 12 safe counterparts. The retained lexical baseline detects 3/14 vulnerable snippets and flags 3/12 safe snippets. The new engine detects and traces 14/14 and flags 0/12 safe snippets. This small targeted corpus does not measure general real-world accuracy; it is committed for reproduction with `pnpm benchmark:analysis`.
+
+The analyzer suite has 86 passing tests covering the corpus, aliases, helper returns/default arguments, branch-dependent sanitization, exported handlers, Python chained assignment, secret redaction, malformed source, recursive input and finding limits. Peer review identified six semantic edge cases; regression tests now cover each correction. All nine browser regression scenarios pass, including the preserved full scanner workspace. Production-build checks validate the actual worker, loaded Monaco viewer, trace navigation, review-gated patch export, redacted reports and partial syntax coverage.
+
+The previous repository self-review failed because Semgrep partially parsed a raw JSX ampersand in the checker copy. The text now uses an escaped entity; the pinned Semgrep scan of the changed checker and analyzer modules reports no parse errors. No rule or coverage gate was suppressed. TypeScript, the production build and bundled DOMPurify verification pass. Cross-file logic, runtime authorization and business rules remain outside the browser checker; no claim of exhaustive detection is made.
+
 ## Public browser checker — 2026-11-13
 
 The public `/` route now checks pasted/uploaded code without an account, repository connection or API. The full authenticated scanner workspace moved to `/workspace`, including its OAuth return target. Public results come from actual bounded browser rules, not fabricated findings or a remote model.
