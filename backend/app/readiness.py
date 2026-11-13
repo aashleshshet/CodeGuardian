@@ -10,7 +10,7 @@ from .models import WorkerHealth, now
 
 
 def schema_ready(db: Session) -> bool:
-    if settings().environment == "production":
+    if settings().environment in {"production", "local"}:
         # A reachable database may still be empty or running an incompatible revision.
         expected = set(ScriptDirectory(str(ROOT / "backend/migrations")).get_heads())
         current = set(MigrationContext.configure(db.connection()).get_current_heads())

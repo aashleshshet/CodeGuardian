@@ -1,5 +1,27 @@
 # Verification record
 
+## Device-only installation — 2026-11-12
+
+The current installation runs at `http://localhost:3000` on the user's Mac, using a project-scoped Lima VM and Docker Compose. No Oracle host or cloud backend was provisioned. The existing Vercel deployment remains separate and has not been connected to this private local stack.
+
+| Check | Evidence |
+| --- | --- |
+| Service readiness | FastAPI reports database, current Alembic schema, Redis queue and Celery worker ready; PostgreSQL, Redis and Ollama are healthy |
+| Local authentication | Real access-key login, opaque session, CSRF, logout and persisted results after a fresh login verified through HTTP; browser login and archive upload verified |
+| Scanner isolation | Actual local Docker worker ran Semgrep, Bandit, Gitleaks, OSV-Scanner and Trivy on the owned 11-file fixture; all five completed with 86 normalized findings and complete coverage |
+| Offline databases | Administrative download repaired and tested; failed downloads preserve the last successful cache; scans use the private offline cache |
+| Local AI | Real Ollama `qwen2.5-coder:1.5b` responses displayed in the production browser for dependency and SQL injection findings, with CWE-89 citations and unchanged analyzer classifications |
+| Evidence separation | Analyzer messages remain visible when AI output arrives; remediation retains curated CWE guidance or scanner-reported fix versions; no repository changes or automatic patches occur |
+| Local network boundary | Browser verification observed no external HTTP requests; model/API/database/worker have no published ports and use the internal Docker network; only the frontend publishes `127.0.0.1:3000` |
+| Automated tests | 81 backend tests passed, including real analyzers and 18 local-AI contract tests; five browser scenarios passed, including evidence separation, masked local login, Monaco, human patch approval and report download |
+| Build | TypeScript passed and the local Next.js production container build completed successfully |
+
+The browser check uses only the owned vulnerable fixture and removes its imported repository afterward. Local evidence and screenshots are under the ignored `.cache/local` and `.cache/screenshots` directories. Credentials stay in owner-only local files and are not included in those reports. Reproduce the HTTP/worker/model flow with `scripts/local_setup.py smoke`; see [local operation](local.md) for startup, shutdown and cache refresh commands.
+
+Model output remains review material. Contract checks reject malformed JSON, unknown citations/advisory identifiers, unsupported dependency versions and specific unsupported exploitability assurances; they do not establish the truth of arbitrary generated prose. Generated fixes are never applied automatically. Live GitHub App login, private-repository authorization, cloud checks and remote-model providers remain unconfigured and unverified for this installation.
+
+## Earlier cloud preparation
+
 Upgrade verification on 2026-11-06/07:
 
 Production connection follow-up on 2026-11-07: the existing `codeguardian-ai` Vercel project serves `https://codeguardianxweb.vercel.app`, but had no environment variables configured. Its API proxy returned 503 because `API_URL` was absent. No backend host or GitHub App credentials were supplied. The targeted follow-up reads frontend configuration at request time, gates sign-in on service readiness, adds migration-aware independent readiness probes and supports one-worker deployment on smaller hosts. Local checks pass: **50 backend tests**, including all five real analyzers; **4 browser scenarios**; TypeScript, production build and the bundled sanitizer check. These tests do not establish a connected production backend. A host is still being selected; no paid infrastructure was provisioned.
@@ -16,7 +38,7 @@ Production connection follow-up on 2026-11-07: the existing `codeguardian-ai` Ve
 
 The initial upgrade CI run passed PostgreSQL, all application tests and the offline Docker fixture scan. Its self-review uncovered JSX parser warnings and dependency advisories; the follow-up escapes JSX text, patches the bundled sanitizer and separates scanner-only dependencies from the API image. The workflow creates a CodeGuardian self-review artifact. Consult the run for this commit for the current CI result. Self-review artifacts surface findings for review and do not certify vulnerability-free dependencies.
 
-Docker is unavailable on the local workstation; local exact-fixture execution is test-only and does not establish container isolation. A live backend host has not been selected. No production GitHub App credentials, private-repository authorization or local/remote model endpoint was supplied. Those live paths require the activation smoke tests in [deployment.md](deployment.md). Mocked GitHub/model tests validate application contracts, not external service configuration.
+At the time of these earlier cloud checks, Docker and a model endpoint were unavailable on the workstation. The device-only verification above supersedes those local limitations. Cloud backend and GitHub App activation still require the smoke tests in [deployment.md](deployment.md). Mocked GitHub/model tests validate application contracts, not external service configuration.
 
 The Vercel frontend has no fabricated fallback data. Without a configured API, it presents a service-setup notice. The test harness resides only in `backend/tests/e2e_app.py`, refuses non-test environments and is excluded from production images.
 

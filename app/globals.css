@@ -39,3 +39,6 @@
 .dependency-evidence{padding:14px 0;border-block:1px solid var(--rule);margin:16px 0}.dependency-evidence strong{font-family:var(--font-mono);font-size:12px}.dependency-evidence p{font-size:11px;margin:7px 0}.dependency-evidence .neutral-tag{margin:4px 4px 0 0;font-size:9px}.advisory-link{display:block;font-size:10px;color:var(--accent);margin-top:6px}
 
 @media(max-width:760px){.finding-table .engine-col{display:none}.connected-shell .toast{transform:none;width:auto}.connected-shell .inbox-list{display:block}}
+
+/* Device-only access form follows the existing visual system. */
+.local-signin{display:grid;gap:10px;margin-top:24px}.local-signin label{font-size:12px;font-weight:600}.local-signin input{width:100%;padding:12px;border:1px solid var(--control);border-radius:7px;background:var(--surface);font-family:var(--font-mono)}.local-signin p{font-size:12px}.local-signin .local-login-error{color:var(--negative)}.local-signin .signin-button{margin-top:8px}.integrations-layout.local-sources{grid-template-columns:minmax(0,720px)}

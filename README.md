@@ -4,11 +4,13 @@
 
 CodeGuardian analyzes authorized Python, JavaScript, and TypeScript repositories with real security tools. It keeps analyzer evidence separate from potential vulnerabilities and optional AI guidance. Suggested changes remain reviewable, untested patches that a human must approve before exporting.
 
+**Run on your device:** the [local setup guide](docs/local.md) starts the entire application at `http://localhost:3000`, with local access-key authentication and ZIP uploads. No Oracle account, GitHub App or cloud backend is required. Use the dedicated local Docker stack to keep source and scan results on your machine. Optional Qwen2.5-Coder explanations run through Ollama inside the private local network.
+
 [Website](https://codeguardianxweb.vercel.app) · [Deployment](docs/deployment.md) · [Architecture](docs/architecture.md) · [Security model](SECURITY.md) · [Verification](docs/verification.md)
 
 ![CodeGuardian sign-in and onboarding](docs/images/welcome.png)
 
-> **Deployment status:** the Vercel frontend is independently deployable. A container host and GitHub App credentials are required to activate sign-in and repository scanning. An unconfigured deployment shows a setup notice. There is no production demo account, fixture workspace, or fabricated activity.
+> **Deployment status:** the complete device-only stack supports local sign-in and archive scanning. The existing Vercel frontend remains a separate, unconfigured cloud deployment. Cloud GitHub sign-in and repository scanning require a reachable backend and GitHub App credentials. There is no production demo account, fixture workspace, or fabricated activity.
 
 ## What works
 
@@ -96,7 +98,7 @@ The complete setup, environment variables, GitHub permissions, cache update comm
 
 ## Known boundaries
 
-This is a functioning MVP with production-oriented safeguards, not a claim of independently audited enterprise readiness. Live GitHub App/private-repository and LLM behavior must be validated with the operator’s credentials. No backend host was selected for this release.
+This is a functioning MVP with production-oriented safeguards, not a claim of independently audited enterprise readiness. The current installation runs on the operator's device. Live GitHub App/private-repository access and remote model providers still require configuration and verification. See the dated [verification record](docs/verification.md) for the tested local flows.
 
 Direct repository writes, automatic merging and in-app PR creation are disabled. Export a reviewed patch, test it locally and create a PR yourself. Fork PRs are skipped. The bundled rules do not cover every vulnerability or language framework. Trivy scans source/manifests/configuration; CodeGuardian does not build or execute submitted container images. UI lists expose the latest 100 repositories, 20 scans per repository and bounded branch/commit pages; API pagination supports further retrieval. Trend points are per-scan counts, not an aggregate security score.
 

@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { ArrowLeft, Check, CheckCheck, ChevronRight, Code2, Download, FileCode2, GitCompareArrows, Info, Loader2, LockKeyhole, Search, ShieldCheck, Sparkles, X } from "lucide-react";
 import type { Explanation, Finding, Patch, Scan, Severity } from "@/lib/types";
@@ -24,32 +24,40 @@ export default function Review({scan, selected, select, theme, csrf, llm, notify
   const [note, setNote] = useState("");
   const [dismiss, setDismiss] = useState(false);
   const fingerprint = selected?.fingerprint;
+  const selectionRequest = useRef<AbortController | null>(null);
   useEffect(() => {
-    let cancel = false;
+    const controller = new AbortController();
+    selectionRequest.current = controller;
+    setBusy("");
     setTab("source"); setPatch(null); setPatchError(""); setReviewed(false); setDismiss(false); setNote("");
     if (!fingerprint) {setExplanation(null); return;}
     {
       setExplanation(null);
-      api<Explanation>(`/scans/${scan.id}/findings/${fingerprint}/explanation`, {method: "POST", body: JSON.stringify({use_llm: false})}, csrf).then(data => {if (!cancel) setExplanation(data);}).catch(() => {});
+      api<Explanation>(`/scans/${scan.id}/findings/${fingerprint}/explanation`, {method: "POST", signal: controller.signal, body: JSON.stringify({use_llm: false})}, csrf).then(data => {if (!controller.signal.aborted) setExplanation(current => current?.provider === "llm" ? current : data);}).catch(() => {});
     }
-    return () => {cancel = true;};
+    return () => controller.abort();
   }, [fingerprint, scan.id, csrf]);
   const filtered = scan.findings.filter(f => (severity === "all" || f.severity === severity) && (engine === "all" || f.engine === engine) && (status === "all" || f.status === status) && (!after || (f.first_seen || scan.created_at) >= after) && `${f.title} ${f.path} ${f.rule_id} ${f.cwe}`.toLowerCase().includes(query.toLowerCase()));
   const source = selected ? scan.files[selected.path] || "" : "";
   async function getPatch() {
     if (!selected) return;
+    const signal = selectionRequest.current?.signal;
     setTab("patch"); setBusy("patch"); setPatchError("");
     try {
-      const data = await api<Patch>(`/scans/${scan.id}/findings/${selected.fingerprint}/patch`, {method: "POST"}, csrf);
+      const data = await api<Patch>(`/scans/${scan.id}/findings/${selected.fingerprint}/patch`, {method: "POST", signal}, csrf);
+      if (signal?.aborted) return;
       if (!data) throw new Error(source.includes("[REDACTED]") ? "This file contains redacted credentials. Remediate secrets locally before proposing a patch." : "This finding needs a context-aware fix. Use the remediation guidance to author and test a change locally.");
       setPatch(data);
-    } catch (error) {setPatchError((error as Error).message);} finally {setBusy("");}
+    } catch (error) {if (!signal?.aborted) setPatchError((error as Error).message);} finally {if (!signal?.aborted) setBusy("");}
   }
   async function generateAI() {
     if (!selected) return;
+    const signal = selectionRequest.current?.signal;
     setBusy("ai");
-    try {setExplanation(await api<Explanation>(`/scans/${scan.id}/findings/${selected.fingerprint}/explanation`, {method: "POST", body: JSON.stringify({use_llm: true})}, csrf));}
-    catch (error) {notify((error as Error).message, true);} finally {setBusy("");}
+    try {
+      const generated = await api<Explanation>(`/scans/${scan.id}/findings/${selected.fingerprint}/explanation`, {method: "POST", signal, body: JSON.stringify({use_llm: true})}, csrf);
+      if (!signal?.aborted) setExplanation(generated);
+    } catch (error) {if (!signal?.aborted) notify((error as Error).message, true);} finally {if (!signal?.aborted) setBusy("");}
   }
   async function exportPatch() {
     if (!patch || !selected || !reviewed) return;
@@ -83,14 +91,14 @@ export default function Review({scan, selected, select, theme, csrf, llm, notify
     <aside className="explanation-panel" aria-label="Finding details">
       <div className="detail-heading"><span className="section-icon"><ShieldCheck size={17}/>Evidence &amp; guidance</span><span className="neutral-tag">{selected.rule_id}</span></div>
       <div className="detail-content"><div className="detail-title"><SeverityBadge severity={selected.severity}/><h2>{selected.title}</h2><EvidenceBadge finding={selected}/></div>
-      <p className="detail-message">{explanation?.explanation || selected.message}</p>
+      <p className="detail-message">{selected.message}</p>
       <dl className="evidence-facts"><div><dt>Analyzer</dt><dd>{selected.engine}</dd></div><div><dt>Confidence</dt><dd className="capitalize">{selected.confidence}</dd></div><div><dt>Weakness</dt><dd>{/^CWE-\d+$/.test(selected.cwe) ? <a href={`https://cwe.mitre.org/data/definitions/${selected.cwe.replace("CWE-", "")}.html`} target="_blank" rel="noreferrer">{selected.cwe} ↗</a> : selected.cwe}</dd></div><div><dt>OWASP</dt><dd>{selected.owasp}</dd></div></dl>
       {selected.package && <div className="dependency-evidence"><strong>{selected.package}</strong><p>Fixed versions: {selected.fixed_version || "No published fix in this evidence"}</p>{selected.advisory_ids?.map(id=><span className="neutral-tag" key={id}>{id}</span>)}</div>}
       {selected.first_seen && <p className="small muted">First seen {new Date(selected.first_seen).toLocaleDateString()} · Last seen {new Date(selected.last_seen || selected.first_seen).toLocaleDateString()}</p>}
       {selected.references?.filter(u=>u.startsWith("https://")).slice(0,4).map((u,i)=><a className="advisory-link" key={u} href={u} target="_blank" rel="noreferrer">Advisory reference {i+1} ↗</a>)}
       <div className="guidance-heading"><Sparkles size={16}/><h3>{explanation?.provider === "llm" ? "AI explanation" : "Grounded guidance"}</h3></div>
-      <p className="muted small">{explanation?.provider === "llm" ? `Generated with ${explanation.model}. Review for accuracy.` : "Curated from CWE references. No AI claim of exploitability."}</p>
-      {explanation && <><p>{explanation.remediation}</p>{explanation.impact&&<details><summary>Potential impact <ChevronRight size={14}/></summary><p>{explanation.impact}</p></details>}{explanation.false_positive_considerations?.length ? <details><summary>False-positive considerations <ChevronRight size={14}/></summary><ul>{explanation.false_positive_considerations.map((x,i)=><li key={i}>{x}</li>)}</ul></details>:null}<details><summary>What to verify <ChevronRight size={14}/></summary><ul>{explanation.conditions_to_verify.map((x, i) => <li key={i}>{x}</li>)}</ul></details><details><summary>Suggested regression tests <ChevronRight size={14}/></summary><ul>{explanation.tests.map((x, i) => <li key={i}>{x}</li>)}</ul></details><div className="citations">{explanation.citations.map(c => <a key={c.id} href={c.url} target="_blank" rel="noreferrer">{c.id}<span>↗</span></a>)}</div></>}
+      <p className="muted small">{explanation?.provider === "llm" ? `Generated with ${explanation.model}. Exploitability is unverified; review this interpretation for accuracy.` : "Curated from CWE references. No AI claim of exploitability."}</p>
+      {explanation && <>{explanation.provider === "llm" && <p>{explanation.explanation}</p>}<p>{explanation.remediation}</p>{explanation.impact&&<details><summary>Potential impact <ChevronRight size={14}/></summary><p>{explanation.impact}</p></details>}{explanation.false_positive_considerations?.length ? <details><summary>False-positive considerations <ChevronRight size={14}/></summary><ul>{explanation.false_positive_considerations.map((x,i)=><li key={i}>{x}</li>)}</ul></details>:null}<details><summary>What to verify <ChevronRight size={14}/></summary><ul>{explanation.conditions_to_verify.map((x, i) => <li key={i}>{x}</li>)}</ul></details><details><summary>Suggested regression tests <ChevronRight size={14}/></summary><ul>{explanation.tests.map((x, i) => <li key={i}>{x}</li>)}</ul></details><div className="citations">{explanation.citations.map(c => <a key={c.id} href={c.url} target="_blank" rel="noreferrer">{c.id}<span>↗</span></a>)}</div></>}
       {llm && <button className="button full" disabled={busy === "ai"} onClick={generateAI}>{busy === "ai" ? <Loader2 size={15} className="spin"/> : <Sparkles size={15}/>}Explain with configured AI</button>}
       <div className="review-actions"><button className="button primary full" onClick={getPatch}><GitCompareArrows size={15}/>Review suggested patch</button><div className="button-pair"><button className="button" disabled={busy === "review"} onClick={() => saveReview(selected.status === "confirmed" ? "open" : "confirmed")}><CheckCheck size={14}/>{selected.status === "confirmed" ? "Reopen" : "Confirm"}</button><button className="button" onClick={() => setDismiss(!dismiss)}><X size={14}/>Dismiss</button></div>{dismiss && <div className="dismiss-form"><label>Reason for dismissal<textarea value={note} onChange={e => setNote(e.target.value)} placeholder="Explain why this finding does not apply…" maxLength={2000}/></label><button className="button full" disabled={!note.trim() || busy === "review"} onClick={() => saveReview("dismissed")}>Save review</button></div>}<p className="review-footnote">Reviews are saved with an audit event. Repository changes always stay in your hands.</p></div></div>
     </aside></> : <div className="empty"><ShieldCheck size={34}/><h2>No findings to review</h2><p>Check scan coverage before treating this repository as safe.</p></div>}

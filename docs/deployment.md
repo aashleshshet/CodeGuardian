@@ -1,6 +1,8 @@
 # Deployment and live activation
 
-The frontend is hosted on Vercel. API, PostgreSQL, Redis, scheduler and scanner workers require a Docker-capable Linux host; ordinary Vercel functions are not the scanner runtime. No container host has been chosen, so backend deployment and real GitHub authorization remain operator activation steps.
+The current installation runs entirely on the user's device. Follow the [local setup guide](local.md) for local authentication, archive scans and optional on-device AI.
+
+This document covers optional cloud activation. The existing frontend is hosted on Vercel. API, PostgreSQL, Redis, scheduler and scanner workers require a Docker-capable Linux host; ordinary Vercel functions are not the scanner runtime. No cloud backend host has been chosen, so cloud deployment and real GitHub authorization remain operator activation steps.
 
 ## 1. Prepare a dedicated scanner host
 

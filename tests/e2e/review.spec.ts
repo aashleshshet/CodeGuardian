@@ -30,9 +30,33 @@ test("new account has empty real data and usable settings",async({page})=>{
  await page.getByRole("button",{name:"Settings",exact:true}).click();const checkbox=page.getByRole("checkbox",{name:"Scan failures",exact:true});await checkbox.uncheck();await page.reload();await expect(checkbox).not.toBeChecked();
  await page.getByRole("button",{name:"Delete account",exact:true}).click();await expect(page.getByRole("alertdialog")).toBeVisible();await page.getByRole("button",{name:"Keep my data"}).click();await page.getByRole("button",{name:"Sign out",exact:true}).click();await expect(page.getByRole("heading",{name:"See the risk. Own the fix."})).toBeVisible();
 });
+test("local sign-in uses a masked key and cannot bypass the backend auth mode",async({page})=>{
+ await page.route("**/api/backend/capabilities",route=>route.fulfill({json:{github:false,local_auth:true,llm:false,checks:false,repository_writes:false,scanner_mode:"docker"}}));
+ await page.route("**/api/backend/ready",route=>route.fulfill({json:{status:"ready"}}));
+ await page.goto("/");
+ const key=page.getByLabel("Local access key",{exact:true});
+ await expect(key).toHaveAttribute("type","password");
+ await expect(page.getByRole("link",{name:"Continue with GitHub"})).toHaveCount(0);
+ await key.fill("not-a-real-local-key-for-browser-contract-test");
+ await page.getByRole("button",{name:"Open local workspace"}).click();
+ await expect(page.locator(".local-signin").getByRole("alert")).toHaveText("Local authentication is not available");
+ await expect(page.getByRole("heading",{name:"Your security, in focus."})).toHaveCount(0);
+});
 test("real scanner evidence, Monaco, review persistence, human patch gate, reports",async({page})=>{
+ await page.route("**/api/backend/capabilities",async route=>{const response=await route.fetch();await route.fulfill({response,json:{...await response.json(),llm:true}});});
+ const generatedText="Test model guidance: verify whether untrusted input reaches this query.";
+ await page.route("**/findings/*/explanation",async route=>{
+  if(!route.request().postDataJSON()?.use_llm){await route.continue();return;}
+  const response=await route.fetch({postData:JSON.stringify({use_llm:false})});
+  await route.fulfill({response,json:{...await response.json(),provider:"llm",model:"browser-contract-fixture",explanation:generatedText}});
+ });
  const data=await signIn(page,true);await expect(page.locator(".scan-row")).toHaveCount(1);await page.screenshot({path:".cache/screenshots/overview-dark.png",fullPage:true,animations:"disabled"});
  await page.getByRole("button",{name:"Code review",exact:true}).click();const inbox=page.locator(".inbox-finding").filter({hasText:"SQL injection"});await inbox.first().click();await expect(page.locator(".monaco-editor").first()).toBeVisible();await expect(page.getByRole("heading",{name:"SQL injection"})).toBeVisible();
+ const analyzerMessage=await page.locator(".detail-message").innerText();
+ await page.getByRole("button",{name:"Explain with configured AI"}).click();
+ await expect(page.getByRole("heading",{name:"AI explanation",exact:true})).toBeVisible();
+ await expect(page.getByText(generatedText,{exact:true})).toHaveCount(1);
+ await expect(page.locator(".detail-message")).toHaveText(analyzerMessage);
  await page.evaluate(()=>window.scrollTo(0,0));await page.screenshot({path:".cache/screenshots/review-dark.png",fullPage:false,animations:"disabled"});await page.getByRole("button",{name:"Confirm",exact:true}).click();await expect(page.getByText("Finding confirmed. Review saved.",{exact:true})).toBeVisible();await page.reload();await inbox.first().click();await expect(page.getByRole("button",{name:"Reopen",exact:true})).toBeVisible();
  await page.locator(".inbox-finding").filter({hasText:"receipt.ts"}).click();await page.getByRole("button",{name:"Review suggested patch",exact:true}).click();const exportPatch=page.getByRole("button",{name:"Export reviewed patch",exact:true});await expect(exportPatch).toBeDisabled();await page.getByLabel("I reviewed this diff and will test it before use.").check();await expect(exportPatch).toBeEnabled();const patchDownload=page.waitForEvent("download");await exportPatch.click();expect((await patchDownload).suggestedFilename()).toBe("codeguardian.patch");
  await page.getByRole("button",{name:"Switch to light theme"}).click();await page.evaluate(()=>window.scrollTo(0,0));await page.screenshot({path:".cache/screenshots/patch-light.png",fullPage:false,animations:"disabled"});await page.getByRole("button",{name:"Reports",exact:true}).click();const reportDownload=page.waitForEvent("download");await page.getByRole("button",{name:"Export JSON",exact:true}).click();expect((await reportDownload).suggestedFilename()).toContain("codeguardian-");

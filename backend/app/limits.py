@@ -8,7 +8,7 @@ from .config import settings
 
 def check_limit(identity: str, action: str, maximum: int, window: int = 60):
     cfg = settings()
-    if cfg.environment != "production": return
+    if cfg.environment not in {"production", "local"}: return
     key = "cg:limit:" + hashlib.sha256(identity.encode()).hexdigest()[:24] + f":{action}:{int(time.time()) // window}"
     try:
         redis = Redis.from_url(cfg.redis_url, socket_timeout=2, socket_connect_timeout=2)

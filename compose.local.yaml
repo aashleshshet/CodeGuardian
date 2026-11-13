@@ -1,0 +1,136 @@
+name: codeguardian-local
+x-runtime: &runtime
+  ENVIRONMENT: local
+  PUBLIC_URL: http://localhost:${LOCAL_PORT:-3000}
+  DATABASE_URL: postgresql+psycopg://guardian:${POSTGRES_PASSWORD:?Run scripts/local_setup.py init}@postgres:5432/guardian
+  REDIS_URL: redis://redis:6379/0
+  TOKEN_ENCRYPTION_KEY: ${TOKEN_ENCRYPTION_KEY:?Run local setup}
+  LOCAL_AUTH_ENABLED: "true"
+  LOCAL_ACCESS_KEY_HASH: ${LOCAL_ACCESS_KEY_HASH:?Run local setup}
+  SCANNER_MODE: docker
+  SCANNER_IMAGE: codeguardian-scanner:local
+  TASKS_EAGER: "false"
+  ADVISORY_ENRICHMENT_ENABLED: "false"
+  LLM_ENABLED: "false"
+  LLM_ALLOW_REMOTE: "false"
+x-restricted: &restricted
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  tmpfs: ["/tmp:size=128m,mode=1777"]
+  restart: unless-stopped
+  networks: [local]
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: guardian
+      POSTGRES_DB: guardian
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes: ["postgres_data:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U guardian"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    mem_limit: 512m
+    restart: unless-stopped
+    networks: [local]
+  redis:
+    image: redis:8.4-alpine
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "128mb", "--maxmemory-policy", "noeviction"]
+    volumes: ["redis_data:/data"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    mem_limit: 256m
+    restart: unless-stopped
+    networks: [local]
+  migrate:
+    build: {context: ., dockerfile: backend/Dockerfile, target: api}
+    environment: *runtime
+    command: ["alembic", "-c", "backend/alembic.ini", "upgrade", "head"]
+    depends_on:
+      postgres: {condition: service_healthy}
+    networks: [local]
+  api:
+    <<: *restricted
+    build: {context: ., dockerfile: backend/Dockerfile, target: api}
+    environment: *runtime
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+      redis: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    mem_limit: 768m
+    cpus: 1
+    pids_limit: 128
+  worker:
+    <<: *restricted
+    build: {context: ., dockerfile: backend/Dockerfile, target: worker}
+    command: ["celery", "-A", "app.tasks.celery", "worker", "--loglevel=WARNING", "--concurrency=1", "--without-gossip", "--without-mingle"]
+    environment:
+      <<: *runtime
+      SCAN_ROOT: ${SCANNER_JOBS_DIR}
+      SCANNER_CACHE: ${SCANNER_CACHE_DIR}
+    user: "${WORKER_UID:-1000}:${DOCKER_GID:-0}"
+    volumes:
+      - ${SCANNER_JOBS_DIR}:${SCANNER_JOBS_DIR}
+      - ${SCANNER_CACHE_DIR}:${SCANNER_CACHE_DIR}:ro
+      - ${DOCKER_DAEMON_SOCKET:-/var/run/docker.sock}:/var/run/docker.sock
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+      redis: {condition: service_healthy}
+    mem_limit: 1g
+    cpus: 2
+    pids_limit: 128
+  scheduler:
+    <<: *restricted
+    build: {context: ., dockerfile: backend/Dockerfile, target: api}
+    environment: *runtime
+    command: ["celery", "-A", "app.tasks.celery", "beat", "--loglevel=WARNING", "--schedule=/tmp/celerybeat-schedule"]
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+      redis: {condition: service_healthy}
+    mem_limit: 256m
+    pids_limit: 64
+  frontend:
+    <<: *restricted
+    networks: [local, frontend_ingress]
+    build: {context: ., dockerfile: Dockerfile.frontend}
+    environment:
+      API_URL: http://api:8000
+      NEXT_TELEMETRY_DISABLED: "1"
+    ports: ["127.0.0.1:${LOCAL_PORT:-3000}:3000"]
+    depends_on:
+      api: {condition: service_healthy}
+    mem_limit: 768m
+    cpus: 1
+    pids_limit: 128
+  scanner-data:
+    profiles: [tools]
+    image: codeguardian-scanner:local
+    pull_policy: never
+    user: "${WORKER_UID:-1000}:${DOCKER_GID:-0}"
+    environment: {TMPDIR: /scanner-cache}
+    entrypoint: ["python", "/app/scripts/update_scanner_data.py"]
+    command: ["--cache-dir", "/scanner-cache"]
+    volumes: ["${SCANNER_CACHE_DIR}:/scanner-cache"]
+    read_only: true
+    tmpfs: ["/tmp:size=256m,mode=1777"]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 3g
+    networks: [updates]
+networks:
+  local: {internal: true}
+  frontend_ingress: {}
+  updates: {}
+volumes:
+  postgres_data:
+  redis_data:

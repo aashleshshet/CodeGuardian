@@ -31,7 +31,7 @@ logger = logging.getLogger("codeguardian")
 @asynccontextmanager
 async def lifespan(app):
     settings().validate_runtime()
-    if settings().environment != "production": SQLModel.metadata.create_all(engine)
+    if settings().environment not in {"production", "local"}: SQLModel.metadata.create_all(engine)
     yield
 
 
@@ -71,8 +71,9 @@ def ready(db: Session = Depends(get_db)):
 @app.get("/capabilities")
 def capabilities():
     cfg = settings()
-    configured = all((cfg.github_client_id, cfg.github_client_secret, cfg.github_app_id, cfg.github_private_key, cfg.token_encryption_key, cfg.github_app_slug))
-    return {"github": bool(configured), "llm": bool(cfg.llm_enabled and cfg.llm_model), "checks": cfg.github_checks_enabled,
+    configured = cfg.environment != "local" and all((cfg.github_client_id, cfg.github_client_secret, cfg.github_app_id, cfg.github_private_key, cfg.token_encryption_key, cfg.github_app_slug))
+    return {"github": bool(configured), "local_auth": cfg.environment == "local" and cfg.local_auth_enabled,
+            "llm": bool(cfg.llm_enabled and cfg.llm_model), "checks": cfg.github_checks_enabled,
             "repository_writes": False, "scanner_mode": cfg.scanner_mode,
             "install_url": f"https://github.com/apps/{cfg.github_app_slug}/installations/new" if configured else None}
 
@@ -94,6 +95,7 @@ def github_start(request: Request, db: Session = Depends(get_db)):
 
 @app.get("/auth/github/callback")
 def github_callback(request: Request, code: str, state: str, db: Session = Depends(get_db)):
+    if settings().environment == "local": raise HTTPException(404, "GitHub authentication is disabled in local mode")
     cookie = request.cookies.get("cg_oauth", "")
     stored = db.exec(select(OAuthState).where(OAuthState.id == digest(state)).with_for_update()).first()
     if not cookie or not secrets.compare_digest(cookie, state) or not stored or stored.expires_at.replace(tzinfo=timezone.utc) < now():
@@ -131,7 +133,8 @@ def github_callback(request: Request, code: str, state: str, db: Session = Depen
 
 @app.get("/auth/me")
 def me(request: Request, user: User = Depends(current_user)):
-    return {"login": user.login, "avatar_url": user.avatar_url, "csrf_token": request.state.login_session.csrf_token}
+    return {"login": user.login, "avatar_url": user.avatar_url, "csrf_token": request.state.login_session.csrf_token,
+            "auth_method": "local" if user.github_id == -1 else "github"}
 
 
 @app.post("/auth/logout")
@@ -240,6 +243,8 @@ def report(scan_id: str, format: str = "json", user: User = Depends(current_user
     return redact_tree({"schema_version": "2.0", "notice": "Static analyzer evidence is not proof of exploitability. Secrets are redacted on a best-effort basis.", **data})
 
 
+from .local_auth import router as local_auth_router
+app.include_router(local_auth_router)
 from .integrations import router as integrations_router
 from .webhooks import router as webhook_router
 app.include_router(integrations_router)

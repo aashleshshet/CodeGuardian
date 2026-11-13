@@ -12,6 +12,8 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
     public_url: str = "http://localhost:3000"
     token_encryption_key: str = ""
+    local_auth_enabled: bool = False
+    local_access_key_hash: str = ""
     github_client_id: str = ""
     github_client_secret: str = ""
     github_app_id: str = ""
@@ -37,6 +39,7 @@ class Settings(BaseSettings):
     source_retention_hours: int = 24
     result_retention_days: int = 90
     advisory_cache_hours: int = 24
+    advisory_enrichment_enabled: bool = True
     nvd_api_key: str = ""
     llm_allow_remote: bool = False
     max_scan_attempts: int = 3
@@ -47,6 +50,28 @@ class Settings(BaseSettings):
         from urllib.parse import urlparse
         if self.token_encryption_key:
             Fernet(self.token_encryption_key.encode())
+        if self.local_auth_enabled or self.environment == "local":
+            import re
+            from ipaddress import ip_address
+            public = urlparse(self.public_url)
+            try:
+                loopback = public.hostname == "localhost" or ip_address(public.hostname or "").is_loopback
+                port = public.port
+            except ValueError:
+                loopback, port = False, None
+            if (
+                self.environment != "local" or not self.local_auth_enabled
+                or public.scheme not in {"http", "https"} or not loopback
+                or public.username or public.password or public.path not in {"", "/"}
+                or public.query or public.fragment
+            ):
+                raise RuntimeError("Local authentication requires local mode and a loopback public origin")
+            if not re.fullmatch(r"[0-9a-f]{64}", self.local_access_key_hash):
+                raise RuntimeError("Local authentication requires a SHA-256 access-key hash")
+            if not self.token_encryption_key or self.scanner_mode != "docker" or self.tasks_eager:
+                raise RuntimeError("Local mode requires encrypted storage and asynchronous Docker scanning")
+            if self.llm_allow_remote:
+                raise RuntimeError("Local mode does not allow remote AI providers")
         if self.llm_enabled:
             host = urlparse(self.llm_base_url)
             local = host.hostname in {"localhost", "127.0.0.1", "ollama", "host.docker.internal"}

@@ -11,6 +11,8 @@ from .redaction import redact_tree
 
 
 def fetch_advisory(identifier: str, source: str, db: Session):
+    if settings().environment == "local" or not settings().advisory_enrichment_enabled:
+        return None
     key=f"{source}:{identifier}"
     cached=db.get(VulnerabilityReference,key)
     if cached and cached.expires_at.replace(tzinfo=timezone.utc)>now():return cached.payload
@@ -68,6 +70,8 @@ def fetch_advisory(identifier: str, source: str, db: Session):
 
 
 def enrich_findings(findings,db):
+    if settings().environment == "local" or not settings().advisory_enrichment_enabled:
+        return findings
     # Bound network time independently from the number of source findings.
     deadline=time.monotonic()+25
     results={}; budget=4

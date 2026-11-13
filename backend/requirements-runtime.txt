@@ -21,6 +21,7 @@ idna==3.20
 kombu==5.7.0
 mako==1.4.3
 markupsafe==3.0.4
+packaging==26.3
 prompt-toolkit==3.0.53
 psycopg==3.3.8
 psycopg-binary==3.3.8
