@@ -2,7 +2,7 @@ import {parser} from "@lezer/python";
 import type {FlowStep, StructuralFinding, StructuralResult} from "./analysis-types.ts";
 
 type Node = ReturnType<typeof parser.parse>["topNode"];
-type Value = {dynamic: boolean; tainted: boolean; trace: FlowStep[]; ref?: string; constant?: string | boolean; fields?: Map<string, Value>};
+type Value = {dynamic: boolean; tainted: boolean; trace: FlowStep[]; ref?: string; constant?: string | boolean; fields?: Map<string, Value>; path?: boolean};
 type Env = Map<string, Value>;
 type FunctionInfo = {node: Node; closure: Env; defaults: Map<string, Value>};
 const clean = (constant?: string | boolean): Value => ({dynamic:false, tainted:false, trace:[], constant});
@@ -37,7 +37,8 @@ export function analyzePython(source: string): StructuralResult {
     for(const value of values)for(const item of value.trace)if(!trace.some(t=>t.line===item.line&&t.kind===item.kind)&&trace.length<10)trace.push(item);
     return {dynamic:values.some(v=>v.dynamic),tainted:values.some(v=>v.tainted),trace,
       constant:values.every(v=>v.constant!==undefined&&v.constant===values[0].constant)?values[0].constant:undefined,
-      ref:values.every(v=>v.ref!==undefined&&v.ref===values[0].ref)?values[0].ref:undefined};
+      ref:values.every(v=>v.ref!==undefined&&v.ref===values[0].ref)?values[0].ref:undefined,
+      path:values.every(v=>v.path===true)||undefined};
   };
   const step=(value:Value,node:Node,kind:FlowStep["kind"],label:string):Value=>{
     if(!value.tainted)return value;
@@ -97,6 +98,14 @@ export function analyzePython(source: string): StructuralResult {
       if(isRequest(name)||name==="sys.argv")return sourceValue(node);
       const base=evaluate(parts[0],env,depth+1);
       if(base.fields){const key=parts[1]?.name==="."?text(parts[2]):parts[2]?.name==="String"?decodeString(parts[2]):"";if(base.fields.has(key))return base.fields.get(key)!;}
+      if(base.path&&parts[1]?.name==="."){
+        const property=text(parts[2]);
+        // Keep the path's provenance through parent selection and bound methods.
+        // The marker comes only from a resolved pathlib constructor, never a
+        // coincidentally named application object or arbitrary .read_text method.
+        if(property==="parent")return {...base,ref:undefined};
+        return {...base,path:undefined,ref:`pathlib-instance.${property}`};
+      }
       return {...merge(base,...parts.filter(n=>!["PropertyName",".","[","]"].includes(n.name)&&n!==parts[0]).map(n=>evaluate(n,env,depth+1))),ref:name||undefined};
     }
     if(node.name==="DictionaryExpression"){
@@ -112,7 +121,13 @@ export function analyzePython(source: string): StructuralResult {
       const args=argNode?keywordArgs(argNode,env,depth+1):{positional:[],keyword:new Map<string,Value>()};
       const first=args.positional[0]||args.keyword.get("url")||args.keyword.get("path")||args.keyword.get("file")||args.keyword.get("command")||args.keyword.get("args")||args.keyword.get("query")||args.keyword.get("sql")||args.keyword.get("source")||unknown();
       const combined=merge(...args.positional,...args.keyword.values());
+      const receiver=callee.name==="MemberExpression"?evaluate(callee.firstChild||undefined,env,depth+1):clean();
+      const pathInput=receiver.path?receiver:name.startsWith("pathlib-instance.")?evaluate(callee,env,depth+1):undefined;
+      const pathMethod=callee.name==="MemberExpression"&&calleeParts[1]?.name==="."?text(calleeParts[2]):name.startsWith("pathlib-instance.")?name.slice("pathlib-instance.".length):"";
       if(isRequest(name)||/^(?:flask\.)?(?:request|req)\.(?:get_json|json)$/.test(name)||name==="input"||name==="builtins.input")return sourceValue(node);
+      if(/^pathlib\.(?:Path|PosixPath|WindowsPath)$/.test(name))return step({...combined,path:true,ref:undefined},node,"call","A filesystem path is constructed here.");
+      if(pathInput&&/^(?:joinpath|resolve|absolute|expanduser|with_name|with_suffix|with_stem)$/.test(pathMethod))return step({...merge(pathInput,combined),path:true,ref:undefined},node,"call","The filesystem path is transformed here; containment is not established.");
+      if(pathInput?.tainted&&/^(?:open|read_text|read_bytes|write_text|write_bytes|unlink|rmdir|mkdir|touch|iterdir)$/.test(pathMethod))add(node,pathInput,"python-path-traversal","Input-controlled filesystem path","CWE-22","External input reaches a pathlib filesystem operation through its path receiver.","Resolve the path under an intended root and verify containment after normalization; reject absolute paths and unexpected separators.",["Check symlinks, canonical paths and authorization for the chosen file.","Path.resolve and joining a trusted root do not by themselves enforce containment."]);
       if((name==="eval"||name==="exec"||name==="builtins.eval"||name==="builtins.exec")&&first.dynamic)add(node,first,"dynamic-eval","Dynamic code evaluation","CWE-95","A dynamic value reaches Python code evaluation.","Use a data-only parser and validate its schema; remove code evaluation for untrusted input.",["Verify the source of the value and whether executable code is required."]);
       if(/(?:^|\.)(?:execute|executemany|raw)$/.test(name)&&first.dynamic)add(node,first,"sql-interpolation","Dynamic SQL execution","CWE-89","A dynamic query reaches a database execution API. Bound values do not make a dynamically constructed query safe.","Keep SQL syntax constant and pass values through the driver's bound-parameter API. Allowlist any dynamic identifiers.",["Confirm this is a database API and inspect its placeholder contract.","Review all paths that construct the query, including any sanitization."]);
       if(/^subprocess\.(?:run|call|Popen|check_call|check_output)$/.test(name)&&args.keyword.get("shell")?.constant===true&&first.dynamic)add(node,first,"python-shell","Dynamic command with shell enabled","CWE-78","A dynamic command reaches subprocess with shell=True.","Use a fixed executable and a separate argument list with shell=False. Validate options and operands.",["Determine whether untrusted input can influence the command or its arguments."]);
@@ -136,8 +151,12 @@ export function analyzePython(source: string): StructuralResult {
       if(/^(?:requests\.Session|httpx\.(?:Client|AsyncClient))$/.test(name))return {...clean(),ref:name.startsWith("requests")?"requests":"httpx"};
       // A sanitizer cannot be considered safe across SQL, shell, URL and path contexts.
       // Transformations preserve taint; parsing, quoting and normalization are not proof of safety.
-      const receiver=callee.name==="MemberExpression"?evaluate(callee.firstChild||undefined,env,depth+1):clean();
       return step({...merge(combined,receiver),dynamic:combined.dynamic||receiver.dynamic||!combined.constant},node,"call","A call transforms or passes this value.");
+    }
+    if(node.name==="BinaryExpression"&&parts.some(part=>part.name==="ArithOp"&&text(part)==="/")){
+      const values=expressionNodes(node).map(part=>evaluate(part,env,depth+1));
+      const value=merge(...values);
+      return values.some(part=>part.path)?step({...value,path:true,ref:undefined},node,"call","A path segment is joined here."):value;
     }
     if(node.name==="FormatString")return merge(...parts.filter(n=>n.name==="FormatReplacement").map(n=>evaluate(n,env,depth+1)));
     return merge(...expressionNodes(node).map(n=>evaluate(n,env,depth+1)));

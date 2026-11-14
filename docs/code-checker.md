@@ -12,7 +12,7 @@ Results contain a line reference, severity, CWE, explicit OWASP Top 10:2021 mapp
 
 Some findings offer a narrowly scoped proposed change. Review the original, proposed line and semantic caveat, then acknowledge the review before exporting its diff. A patch is not generated when a credential is detected in the file. Nothing is applied automatically. Editing, clearing or replacing source discards the prior findings and patch approval, and cancels any pending worker.
 
-Source and results remain in tab memory. The application has no source-upload request, source persistence, telemetry or model call in this flow. Only the theme preference uses local storage. Downloading a report or reviewed patch saves it to the user's device. Refreshing or closing the tab discards the working source.
+Source and results remain in tab memory. The application has no source-upload request, source persistence or telemetry. Only the theme preference uses local storage. The Security agent retrieves reviewed guidance locally. Optional browser AI runs in a separate worker after explicit consent to download about 300 MB of model artifacts; model assets may remain in browser Cache Storage. No source or question is uploaded. Generation needs WebGPU with shader-f16 and approximately 1 GB available GPU memory. Unsupported browsers keep the retrieved-guidance path. Use **Remove cached model** in the agent settings to delete model artifacts. Downloading a report or reviewed patch saves it to the user's device. Refreshing or closing the tab discards the working source.
 
 ## Interface
 
@@ -42,3 +42,7 @@ These browser tests use synthetic source only, check the worker results and reda
 The owned corpus in `tests/fixtures/browser-flow-cases.json` contains 14 vulnerable snippets and 12 safe counterparts, covering both language engines. `benchmark:analysis` compares the retained lexical fallback with the syntax/flow engine and exits unsuccessfully if the current engine misses an expected weakness, flags a safe counterpart or reports partial parsing. On this corpus, the lexical baseline detects 3/14 vulnerable examples and flags 3/12 safe examples; the new engine detects and traces 14/14 and flags 0/12 safe examples. These figures measure this small regression set only, not general real-world accuracy. Unique engine tests additionally exercise aliases, branch sanitization, helper scopes, parse failures and resource limits.
 
 OWASP categories explicitly use the [2021 taxonomy](https://owasp.org/Top10/2021/) to match the existing scanner workspace; they do not imply certification or coverage of every category.
+
+## Measured quality
+
+See [detection quality](accuracy.md) for precision, recall, challenge cases and known misses. Regression success is not a general accuracy guarantee. [Browser RAG](rag-agent.md) explains findings; it does not certify them.

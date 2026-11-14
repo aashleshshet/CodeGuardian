@@ -9,7 +9,8 @@
     "start": "next start --hostname 0.0.0.0",
     "typecheck": "tsc --noEmit",
     "test:e2e": "playwright test",
-    "test:browser-analysis": "node --experimental-strip-types --test scripts/test-browser-analysis.mjs scripts/test-javascript-analysis.mjs scripts/test-python-analysis.mjs scripts/test-flow-benchmark.mjs scripts/test-parallel-motion.mjs",
+    "test:browser-analysis": "node --experimental-strip-types --test scripts/test-browser-analysis.mjs scripts/test-javascript-analysis.mjs scripts/test-python-analysis.mjs scripts/test-flow-benchmark.mjs scripts/test-parallel-motion.mjs scripts/test-browser-rag.mjs scripts/test-browser-ai.mjs scripts/test-python-pathlib.mjs scripts/test-javascript-accuracy.mjs",
+    "benchmark:challenge": "node --experimental-strip-types scripts/evaluate-holdout.mjs",
     "benchmark:analysis": "node --experimental-strip-types scripts/benchmark-browser-analysis.mjs"
   },
   "dependencies": {
@@ -17,6 +18,7 @@
     "@fontsource/ibm-plex-mono": "^5.2.7",
     "@fontsource/public-sans": "^5.2.7",
     "@lezer/python": "1.1.19",
+    "@mlc-ai/web-llm": "0.2.88",
     "@monaco-editor/react": "^4.7.0",
     "dompurify": "3.4.17",
     "lucide-react": "^0.577.0",

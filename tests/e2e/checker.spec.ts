@@ -158,3 +158,33 @@ test("parallel selections accept rapid input and settle on the latest state", as
   await expect.poll(aligned).toBe(true);
   await expect(page.locator('[data-motion-running="true"]')).toHaveCount(0);
 });
+
+test("browser RAG retrieves cited guidance without model downloads and resets by finding", async ({page}) => {
+  const requests:{url:string;body:string}[]=[];
+  page.on('request',r=>requests.push({url:r.url(),body:r.postData()||''}));
+  await page.addInitScript(()=>Object.defineProperty(navigator,'gpu',{value:undefined,configurable:true}));
+  await page.goto('/');
+  await page.getByRole('button',{name:'Load example',exact:true}).click();
+  await page.getByRole('button',{name:'Check code',exact:true}).click();
+  const agent=page.getByRole('region',{name:'Private browser security agent'});
+  await agent.getByRole('button',{name:'How should I fix this?'}).click();
+  await expect(agent).toContainText('CWE-79');
+  await agent.locator('summary').filter({hasText:'CWE-79'}).click();
+  await expect(agent.getByRole('link',{name:'Read source'})).toHaveAttribute('href','https://cwe.mitre.org/data/definitions/79.html');
+  await agent.locator('summary').filter({hasText:'Private browser AI'}).click();
+  await expect(agent).toContainText('WebGPU is unavailable');
+  await expect(agent.getByRole('button',{name:'Download & enable AI'})).toHaveCount(0);
+  const marker='private_question_marker_241114';
+  await agent.getByLabel('Question about this finding').fill('What is the weather '+marker+'?');
+  await agent.getByRole('button',{name:'Ask',exact:true}).click();
+  await expect(agent).toContainText('I do not have enough relevant reviewed guidance');
+  await page.getByRole('button',{name:/Dynamic code evaluation/}).first().click();
+  await expect(agent).not.toContainText(marker);
+  await expect(agent.getByRole('button',{name:'What should I verify?'})).toBeVisible();
+  expect(requests.filter(r=>r.url.includes('/api/')||!r.url.startsWith(new URL(page.url()).origin))).toEqual([]);
+  expect(requests.some(r=>(r.url+r.body).includes(marker))).toBe(false);
+  await page.setViewportSize({width:390,height:844});
+  await agent.getByRole('button',{name:'What should I verify?'}).click();
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+  await agent.screenshot({path:'.cache/screenshots/browser-rag-mobile.png'});
+});

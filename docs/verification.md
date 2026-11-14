@@ -1,5 +1,14 @@
 # Verification record
 
+## Private web RAG and detector review — 2026-11-15
+
+The public checker now retrieves the reviewed CWE corpus locally and optionally runs the pinned Qwen2.5 0.5B model through WebLLM in a browser worker. The first model use requires an explicit approximately 300 MB download. Code and questions remain in the tab. Both direct fetch and Cache API downloads are restricted to fixed model assets, then disabled before inference. Cache removal performs no download.
+
+Verification: **142 browser analyzer/RAG/runtime tests**, **11 end-to-end browser scenarios**, TypeScript, Next.js production build and bundled DOMPurify check pass. A real production-build Chromium/Metal WebGPU smoke downloaded the model, generated a CWE-79-cited answer, verified no question/source upload or external requests during inference, and removed all model cache entries. It reported zero page errors. Reproduce with `node scripts/smoke-browser-ai.mjs --download-model`; compatible hardware is required. This is functional generation evidence, not a semantic accuracy benchmark.
+
+The additional 16-case authored detection challenge initially scored 4 TP / 2 FP / 4 FN / 6 TN. After computed-property, bound-function, pathlib, numeric-value and immutable-allowlist fixes, the unchanged set scores **7 TP / 0 FP / 1 FN / 8 TN**: **100% precision, 87.5% recall, 93.75% exact case match**. The original 26-case regression set still passes completely. The 15 single-file cases in the new set pass completely after tuning; the remaining miss depends on product-specific object authorization. Independent review also caught and regression-tested unsafe assumptions around mutable guarded variables and overwritten `Number`. See [all labels, limitations and denominators](accuracy.md); these measurements do not establish 97% accuracy on arbitrary code.
+
+
 ## Parallel motion and local RAG agent — 2026-11-14
 
 The frontend uses application-owned spring tracks inspired by interruptible parallel interactions. It does not embed a OnePlus/OxygenOS SDK. Seven motion tests verify momentum retention, independent tracks, shared frame scheduling, cleanup, reduced motion, hidden tabs and long-frame stability. A 90-frame local Chromium sample during rapid theme/filter switching recorded no frame intervals over 34 ms (95th percentile 19.1 ms); this is a local diagnostic, not a cross-device frame-rate guarantee. No browser page errors were observed.

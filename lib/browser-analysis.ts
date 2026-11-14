@@ -70,5 +70,5 @@ export function analyzeCode(source:string, language:BrowserLanguage, filename:st
   const diagnostics=analysis.diagnostics.slice(0,5).map(d=>({line:Math.max(1,d.line),message:d.message}));
   return {findings:findings.slice(0,100),redactedSource:fallback.redactedSource,filename:fallback.filename,language,linesAnalyzed:fallback.linesAnalyzed,
     limitations:[...LIMITATIONS,...(!analysis.parsed?["Syntax could not be fully parsed. Results include best-effort patterns; correct the syntax or submit a complete file and check again."]:[]),...(capped?["Analysis budget reached; at most 100 findings are shown. Review smaller portions for additional matches."]:[])],
-    coverage:{syntax:analysis.parsed&&!analysis.truncated?"parsed":"partial",scope:"single_file",diagnostics},engineVersion:"2026.11.13-flow.1"};
+    coverage:{syntax:analysis.parsed&&!analysis.truncated?"parsed":"partial",scope:"single_file",diagnostics},engineVersion:"2026.11.14-flow.2"};
 }

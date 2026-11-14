@@ -4,7 +4,7 @@
 
 CodeGuardian analyzes authorized Python, JavaScript, and TypeScript repositories with real security tools. It keeps analyzer evidence separate from potential vulnerabilities and optional AI guidance. Suggested changes remain reviewable, untested patches that a human must approve before exporting.
 
-**Check code immediately:** open the [website](https://codeguardianxweb.vercel.app), paste Python, JavaScript or TypeScript, or choose a source file up to 200 KiB. No account or GitHub connection is needed. The public checker parses source and follows selected input flows in a browser worker, displays redacted line-level findings and source-to-sink traces, and exports reports or human-reviewed patch suggestions. It never submits source to a server. These quick checks do not run Semgrep, Bandit, dependency scanners or an AI model; they are not a complete security audit.
+**Check code immediately:** open the [website](https://codeguardianxweb.vercel.app), paste Python, JavaScript or TypeScript, or choose a source file up to 200 KiB. No account or GitHub connection is needed. The public checker parses source and follows selected input flows in a browser worker, displays redacted line-level findings and source-to-sink traces, and exports reports or human-reviewed patch suggestions. It never submits source to a server. These quick checks do not run Semgrep, Bandit or dependency scanners and are not a complete security audit. The **Security agent** retrieves cited guidance locally; optional browser AI downloads a small model and generates on your device. No model is required for scanning or retrieval.
 
 **Run the full scanners on your device:** the [local setup guide](docs/local.md) starts the entire application at `http://localhost:3000/workspace`, with local access-key authentication and ZIP uploads. No Oracle account, GitHub App or cloud backend is required. Use the dedicated local Docker stack to keep source and scan results on your machine. Optional Qwen2.5-Coder explanations and the finding-scoped RAG agent run through Ollama inside the private local network.
 
@@ -13,6 +13,8 @@ CodeGuardian analyzes authorized Python, JavaScript, and TypeScript repositories
 ![CodeGuardian private code checker](docs/images/checker.png)
 
 > **Deployment status:** the public code checker works on Vercel without backend configuration. The existing advanced workspace is preserved at `/workspace` for the on-device Docker stack. Its optional cloud integrations still require a backend and GitHub App configuration. Example code is loaded only by explicit request and its findings are computed when you run a check.
+
+**Detection quality:** see [measured precision, recall and known misses](docs/accuracy.md). A 97% accuracy guarantee across arbitrary code has not been established.
 
 ## What works
 
@@ -24,7 +26,7 @@ CodeGuardian analyzes authorized Python, JavaScript, and TypeScript repositories
 - **Semgrep, Bandit, Gitleaks, OSV-Scanner and Trivy** process integrations. OSV and Trivy consume administrator-provisioned offline databases. Scanner subprocesses run in network-disabled Docker containers with CPU, memory, process, file-size and wall-clock limits.
 - Normalized findings, stable fingerprints, relevant CWE/OWASP mappings, secret redaction, dependency/advisory references, durable first/last seen and triage history.
 - Monaco source review and side-by-side patch diffs; severity, scanner, status, filename and first-seen filtering; grounded explanations; human acknowledgement before patch export.
-- A finding-scoped [RAG security agent](docs/rag-agent.md): local BM25 retrieval with CWE matching, cited answers, review conditions, explicit abstention when guidance is missing, and optional Ollama/OpenAI-compatible generation. Static analysis and retrieved guidance work without an LLM.
+- A finding-scoped [RAG security agent](docs/rag-agent.md): local BM25 retrieval with CWE matching, cited answers, review conditions, explicit abstention when guidance is missing, and optional Ollama/OpenAI-compatible generation. Static analysis and retrieved guidance work without an LLM. The public checker also supports optional private WebGPU generation, with explicit download consent and cache removal.
 - Signed/idempotent GitHub webhooks, opt-in push and same-repository PR scans, scheduled scans, optional GitHub check summaries and an explicit blocking policy.
 - Persisted dashboard counts, scan history, commit comparison, notifications, JSON/SARIF/Markdown reports, data deletion and retention maintenance.
 - Obsidian/sage interface with liquid-glass chrome, independent interruptible spring animations, moving selection capsules, dark/light themes, reduced-motion support and responsive layouts.

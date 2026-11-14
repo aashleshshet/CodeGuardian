@@ -2,7 +2,7 @@
 
 The local `/workspace` review screen includes a **Security agent** for questions about the selected scanner finding. It retrieves application-owned security guidance, optionally asks the configured model to interpret it alongside bounded evidence, and validates the response before returning it with citations. No repository connection is required; authorized ZIP scans work.
 
-On the on-device stack, generation uses the installed Qwen2.5-Coder model through Ollama. On Vercel, the public code checker remains browser-only. Model-backed RAG requires the local review service or an explicitly configured backend; Vercel does not gain access to your Mac or model.
+On the on-device stack, generation uses the installed Qwen2.5-Coder model through Ollama. The public checker also offers private browser RAG on Vercel, described below. Vercel never gains access to your Mac or Ollama service.
 
 ## Use
 
@@ -45,3 +45,26 @@ python scripts/local_setup.py smoke
 ```
 
 Unit tests cover ranked retrieval, unknown-topic abstention, prompt-boundary/redaction contracts, citation validation, unsupported claims and model failure. Browser tests exercise questions, source expansion and finding changes. The local smoke test uses the owned vulnerable fixture, real isolated scanners and the configured local model, then removes its temporary repository.
+
+## Private RAG on the public website
+
+1. Open `/`, paste a supported source file and choose **Check code**.
+2. Select a finding and use its **Security agent**. Retrieved guidance and source excerpts work immediately, without a model or network requests.
+3. Optionally expand **Private browser AI** and choose **Download & enable AI**. The pinned Qwen2.5 0.5B model downloads about 300 MB of artifacts from Hugging Face and GitHub. It needs a secure context, WebGPU with `shader-f16`, and roughly 1 GB of available GPU memory. Browser/platform support varies.
+4. Once ready, **Use browser AI** enables generation. Answers are interpretations requiring review. Disable it for deterministic guidance. Cancel, unload, or remove cached artifacts from the same panel.
+
+The browser uses the same application-owned CWE corpus, bundled at build time. It uses BM25 scores, CWE priority and relevance gates; unsupported questions abstain. This is a reviewed local knowledge base, not live web search. No source is used to construct network queries. The small model is for short finding-scoped explanations, not comprehensive vulnerability discovery.
+
+`lib/browser-ai.ts` lazily loads WebLLM only after consent. The worker permits only fixed versioned model asset GET requests, omits credentials/referrers, and locks fetch access before any source or question is sent to it. The CSP allows WebAssembly and the model artifact hosts; it does not add a cloud inference endpoint. Model config, tokenizer and WASM have integrity checks; model weights use an immutable repository revision. Model generation has a 90-second deadline; initialization has a 10-minute deadline. Cancellation terminates the worker. New questions reset the model chat context, and only the last three UI turns remain in tab memory. Finding changes clear turns and cancel active generation. Model artifacts alone can persist in browser cache, subject to browser eviction.
+
+Prompts contain a bounded, remasked excerpt and one trusted retrieved citation. The question, finding text and source are untrusted data. Structured output, citation allowlists and claim filters reject malformed answers and some unsupported assertions. Failures visibly fall back to cited guidance. These guards cannot prove the semantic accuracy of a generated explanation. Secret masking is best effort; never paste real credentials.
+
+`pnpm test:browser-analysis` covers offline retrieval, redaction, citation/schema checks, asset URL restrictions and cancellation. Public Playwright checks cover no-download default behavior, citation links, abstention, finding reset, mobile layout and WebGPU fallback. Real GPU/model verification is an optional device-dependent smoke check, separate from deterministic CI tests. The installed WebLLM API is documented by [MLC](https://webllm.mlc.ai/docs/user/advanced_usage.html).
+
+Reproduce the optional real GPU smoke after starting a production build (this downloads the model, uses only the example fixture, and removes its cached model afterward):
+
+```sh
+CHECKER_TEST_URL=http://127.0.0.1:3002 node scripts/smoke-browser-ai.mjs --download-model
+```
+
+Chromium on macOS may need the script’s Metal flags in automated environments. Failure on a machine without compatible WebGPU does not turn into a cloud-model request; the normal UI offers retrieval instead.

@@ -361,3 +361,7 @@ Motion uses application-owned spring tracks coordinated in one requestAnimationF
 Navigation, appearance, severity and finding selections share the same moving glass capsule. Hit targets remain stationary, focus outlines remain separate, and primary actions have a small press/release spring. Header and workbench share an outer edge; evidence summary spacing is compact. Touch pointers receive larger control targets.
 
 The authenticated review pane includes a Security agent conversation scoped to the current finding. Retrieved guidance and model interpretation are visibly distinct, cited excerpts are expandable, generation can be cancelled, and the panel offers a no-model retrieval mode. Model requests never block unrelated controls. Conversations reset with the finding and never imply a verified exploit or automatically apply a fix.
+
+## Public browser RAG (2026-11-15)
+
+The selected public finding now contains the same restrained Security agent interaction. Cited retrieval is available immediately; the optional private browser model is disclosed in an expandable settings row with download size, browser requirements, actual load progress, cancellation and cache removal. Model interpretations show their verification conditions by default. Scope changes clear conversation state. Failed or unsupported generation returns to clearly labeled retrieved guidance; no fabricated AI response or security accuracy score is displayed.

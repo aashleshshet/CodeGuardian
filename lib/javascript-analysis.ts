@@ -6,16 +6,20 @@ import type {FlowStep, StructuralFinding, StructuralResult} from "./analysis-typ
 type Ast = {type: string; start?: number | null; end?: number | null; loc?: {start: {line: number}; end: {line: number}}; [key: string]: any};
 type Value = {
   dynamic: boolean; trace: FlowStep[]; htmlSafe?: boolean; constant?: string | number | boolean | null;
-  api?: string; props?: Map<string, Value>; fn?: Ast; closure?: Scope; sql?: boolean;
+  api?: string; props?: Map<string, Value>; fn?: Ast; closure?: Scope; sql?: boolean; methodName?: string;
+  sqlValueSafe?: boolean; array?: boolean; uncertainSpread?: boolean;
+  bindTarget?: Value; bound?: {callee: Value; args: Value[]};
 };
 class Scope {
   values = new Map<string, Value>();
+  immutable = new Set<string>();
   parent?: Scope;
   constructor(parent?: Scope) {this.parent = parent;}
   get(name: string): Value | undefined {return this.values.has(name) ? this.values.get(name) : this.parent?.get(name);}
   has(name: string): boolean {return this.values.has(name) || !!this.parent?.has(name);}
+  isImmutable(name: string): boolean {return this.values.has(name) ? this.immutable.has(name) : !!this.parent?.isImmutable(name);}
   set(name: string, value: Value) {if (this.values.has(name) || !this.parent?.has(name)) this.values.set(name, value); else this.parent.set(name, value);}
-  flatten(): Scope {const copy = this.parent?.flatten() || new Scope(); for (const [key, value] of this.values) copy.values.set(key, value); return copy;}
+  flatten(): Scope {const copy = this.parent?.flatten() || new Scope(); for (const [key, value] of this.values) {copy.values.set(key, value); if (this.immutable.has(key)) copy.immutable.add(key); else copy.immutable.delete(key);} return copy;}
 }
 const unknown = (): Value => ({dynamic: true, trace: []});
 const fixed = (constant?: Value["constant"]): Value => ({dynamic: false, trace: [], constant});
@@ -34,11 +38,16 @@ function join(...values: Value[]): Value {
   const first = values[0];
   return {dynamic: values.some(v => v.dynamic), trace: traceUnion(values),
     htmlSafe: values.every(v => !v.dynamic || v.htmlSafe),
+    sqlValueSafe: values.every(v => !v.dynamic || v.sqlValueSafe),
     constant: values.every(v => v.constant === first.constant) ? first.constant : undefined,
     api: values.every(v => v.api === first.api) ? first.api : undefined,
+    methodName: values.every(v => v.methodName === first.methodName) ? first.methodName : undefined,
     fn: values.every(v => v.fn === first.fn) ? first.fn : undefined,
     closure: values.every(v => v.closure === first.closure) ? first.closure : undefined,
     sql: values.some(v => v.sql),
+    bindTarget: values.every(v => v.bindTarget === first.bindTarget) ? first.bindTarget : undefined,
+    bound: values.every(v => v.bound === first.bound) ? first.bound : undefined,
+    array: values.length === 1 ? first.array : undefined,
     props: values.length === 1 ? first.props : undefined};
 }
 function step(value: Value, node: Ast, kind: FlowStep["kind"], label: string): Value {
@@ -73,6 +82,37 @@ export function analyzeJavaScript(source: string, language: "javascript" | "type
   const exportedNames = new Set<string>();
   let visits = 0, calls = 0, truncated = false;
   const budget = (depth: number) => {if (++visits > 60_000 || depth > 100) {truncated = true; return false;} return true;};
+  // Do not trust a builtin conversion when this program may replace it. Calls
+  // use isolated scope snapshots, so a closure's global mutation must also
+  // invalidate this optimization before any function is analyzed.
+  let numberBuiltinIntact = true;
+  const writesNumber = (target: Ast | undefined): boolean => {
+    if (!target) return false;
+    if (target.type === "Identifier") return target.name === "Number";
+    if (members.has(target.type)) {
+      const global = target.object?.type === "Identifier" && ["globalThis", "window", "self", "global"].includes(target.object.name);
+      const key = !target.computed ? keyOf(target.property) : target.property?.type === "StringLiteral" ? target.property.value : undefined;
+      return global && (key === "Number" || key === undefined);
+    }
+    if (target.type === "ObjectPattern") return target.properties.some((property: Ast) => writesNumber(property.value || property.argument));
+    if (target.type === "ArrayPattern") return target.elements.some((element: Ast) => writesNumber(element));
+    if (["AssignmentPattern", "RestElement"].includes(target.type)) return writesNumber(target.left || target.argument);
+    if (["TSAsExpression", "TSTypeAssertion", "TSNonNullExpression", "ParenthesizedExpression"].includes(target.type)) return writesNumber(target.expression);
+    return false;
+  };
+  const mutationNodes: {node: Ast; depth: number}[] = [{node: tree.program, depth: 0}];
+  while (mutationNodes.length) {
+    const {node, depth} = mutationNodes.pop()!;
+    if (!budget(depth)) {numberBuiltinIntact = false; break;}
+    if ((node.type === "AssignmentExpression" && writesNumber(node.left)) ||
+        (node.type === "UpdateExpression" && writesNumber(node.argument)) ||
+        (node.type === "UnaryExpression" && node.operator === "delete" && writesNumber(node.argument)) ||
+        (["ForInStatement", "ForOfStatement"].includes(node.type) && writesNumber(node.left))) numberBuiltinIntact = false;
+    for (const value of Object.values(node)) {
+      if (Array.isArray(value)) for (const item of value) {if (item && typeof item === "object" && typeof item.type === "string") mutationNodes.push({node: item, depth: depth + 1});}
+      else if (value && typeof value === "object" && typeof value.type === "string") mutationNodes.push({node: value, depth: depth + 1});
+    }
+  }
   const external = (node: Ast, label: string): Value => ({dynamic: true, trace: [{line: line(node), kind: "source", label}]});
   const queue = (node: Ast, closure: Scope) => {if (!queued.has(node)) {queued.add(node); pending.push({node, closure});}};
   const add = (node: Ast, value: Value, ruleId: string, title: string, cwe: string, message: string, remediation: string,
@@ -95,7 +135,10 @@ export function analyzeJavaScript(source: string, language: "javascript" | "type
       property?.start != null && property?.end != null ? {patchProperty: {start: property.start, end: property.end}} : {});
   };
   const readMember = (base: Value, key: string | undefined, node: Ast): Value => {
-    if (key && base.props?.has(key)) return base.props.get(key)!;
+    if (key && base.props?.has(key)) return {...base.props.get(key)!, methodName: key};
+    // Binding captures the function and arguments now; it does not execute the sink.
+    // Explicit own-property overrides above take precedence over Function.bind.
+    if (key === "bind" && (base.api || base.fn || base.bound)) return {...fixed(), bindTarget: base};
     if (base.api === "request" && key && ["query", "body", "params", "cookies", "headers", "url"].includes(key)) {
       return {...external(node, "Request-controlled input enters the program"), api: `request.${key}`};
     }
@@ -105,18 +148,23 @@ export function analyzeJavaScript(source: string, language: "javascript" | "type
     if (base.api === "window" && key === "location") return {dynamic: true, trace: [], api: "browser.location"};
     if (base.api === "context" && key === "request") return {dynamic: true, trace: [], api: "request"};
     if (base.api === "event" && key === "target") return {dynamic: true, trace: [], api: "dom.element"};
-    return {...base, constant: undefined, fn: undefined, closure: undefined, props: undefined, api: base.api && key ? `${base.api}.${key}` : undefined};
+    return {...base, constant: undefined, fn: undefined, closure: undefined, props: undefined, bound: undefined, bindTarget: undefined, array: undefined, sqlValueSafe: undefined, methodName: key, api: base.api && key ? `${base.api}.${key}` : undefined};
   };
-  const bind = (pattern: Ast | undefined, value: Value, env: Scope, declare: boolean, depth: number): void => {
+  const propertyKey = (node: Ast, env: Scope, depth: number): string | undefined => {
+    if (!node.computed) return keyOf(node.property || node.key);
+    const value = evaluate(node.property || node.key, env, depth + 1);
+    return !value.dynamic && (typeof value.constant === "string" || typeof value.constant === "number") ? String(value.constant) : undefined;
+  };
+  const bind = (pattern: Ast | undefined, value: Value, env: Scope, declare: boolean, depth: number, immutable = false): void => {
     if (!pattern || !budget(depth)) return;
-    if (pattern.type === "Identifier") {const next = step(value, pattern, "assignment", "Value is assigned to a local binding"); if (declare) env.values.set(pattern.name, next); else env.set(pattern.name, next);}
-    else if (pattern.type === "AssignmentPattern") bind(pattern.left, join(value, evaluate(pattern.right, env, depth + 1)), env, declare, depth + 1);
+    if (pattern.type === "Identifier") {const next = step(value, pattern, "assignment", "Value is assigned to a local binding"); if (declare) {env.values.set(pattern.name, next); if (immutable) env.immutable.add(pattern.name); else env.immutable.delete(pattern.name);} else env.set(pattern.name, next);}
+    else if (pattern.type === "AssignmentPattern") bind(pattern.left, join(value, evaluate(pattern.right, env, depth + 1)), env, declare, depth + 1, immutable);
     else if (pattern.type === "ObjectPattern") for (const property of pattern.properties || []) {
-      if (property.type === "RestElement") bind(property.argument, value, env, declare, depth + 1);
-      else bind(property.value, readMember(value, keyOf(property.key), property), env, declare, depth + 1);
+      if (property.type === "RestElement") bind(property.argument, value, env, declare, depth + 1, immutable);
+      else bind(property.value, readMember(value, propertyKey(property, env, depth + 1), property), env, declare, depth + 1, immutable);
     }
-    else if (pattern.type === "ArrayPattern") (pattern.elements || []).forEach((element: Ast, i: number) => bind(element, readMember(value, String(i), pattern), env, declare, depth + 1));
-    else if (pattern.type === "RestElement") bind(pattern.argument, value, env, declare, depth + 1);
+    else if (pattern.type === "ArrayPattern") (pattern.elements || []).forEach((element: Ast, i: number) => bind(element, readMember(value, String(i), pattern), env, declare, depth + 1, immutable));
+    else if (pattern.type === "RestElement") bind(pattern.argument, value, env, declare, depth + 1, immutable);
   };
   const param = (node: Ast): Value => {
     const name = node.type === "Identifier" ? node.name : "";
@@ -142,10 +190,34 @@ export function analyzeJavaScript(source: string, language: "javascript" | "type
     const names = new Set(branches.flatMap(b => [...b.values.keys()]));
     for (const name of names) if (env.has(name)) env.set(name, join(...branches.map(b => b.get(name) || env.get(name) || unknown())));
   };
+  // Narrow only pure strict-equality guards on local bindings. A disjunction
+  // proves a fixed allowlist only if every arm constrains the same binding.
+  // Calls, member reads, coercing equality and mixed predicates do not qualify.
+  const literalGuard = (node: Ast, depth = 0): Map<string, Value> => {
+    if (depth > 12) return new Map();
+    if (node.type === "BinaryExpression" && node.operator === "===") {
+      const identifier = node.left.type === "Identifier" ? node.left : node.right.type === "Identifier" ? node.right : undefined;
+      const literal = identifier === node.left ? node.right : node.left;
+      if (identifier && ["StringLiteral", "NumericLiteral", "BooleanLiteral", "NullLiteral"].includes(literal.type)) {
+        return new Map([[identifier.name, fixed(literal.type === "NullLiteral" ? null : literal.value)]]);
+      }
+    }
+    if (node.type === "LogicalExpression" && node.operator === "||") {
+      const left = literalGuard(node.left, depth + 1), right = literalGuard(node.right, depth + 1);
+      return new Map([...left].filter(([name]) => right.has(name)).map(([name, value]) => [name, join(value, right.get(name)!)]));
+    }
+    return new Map();
+  };
   const checkCall = (node: Ast, callee: Value, args: Value[], env: Scope, depth: number): Value => {
+    if (!budget(depth)) return unknown();
+    if (callee.bindTarget) return {...fixed(), bound: {callee: callee.bindTarget,
+      // An unknown spread can contain both thisArg and bound arguments; retain
+      // its provenance rather than silently dropping all prebound arguments.
+      args: args[0]?.uncertainSpread ? [join(...args, unknown())] : args.slice(1)}};
+    if (callee.bound) return checkCall(node, callee.bound.callee, [...callee.bound.args, ...args], env, depth + 1);
     const api = callee.api || "";
     const input = args[0] || fixed();
-    const property = members.has(node.callee?.type) ? keyOf(node.callee.property) : undefined;
+    const property = callee.methodName;
     if ((api === "eval" || api === "Function") && args.some(value => value.dynamic)) add(node, join(...args), "dynamic-eval", "Dynamic code evaluation", "CWE-95",
       "A dynamic value reaches an API that interprets JavaScript code.", "Remove dynamic evaluation. Use data-only parsing and validate the expected schema.", ["Verify whether an attacker can influence the code string."]);
     if (/^(?:node:)?child_process\.(?:exec|execSync)$/.test(api) && input.dynamic) add(node, input, "javascript-shell", "Potential shell command injection", "CWE-78",
@@ -154,7 +226,7 @@ export function analyzeJavaScript(source: string, language: "javascript" | "type
       "Dynamic input reaches a process API with shell interpretation enabled.", "Disable shell interpretation and use a fixed executable with separate validated arguments.", ["Validate arguments as well as the executable name."]);
     if (api === "document.write" || api === "document.writeln") htmlSink(node, join(...args), "javascript-document-write");
     if (property === "insertAdjacentHTML") htmlSink(node, args[1] || fixed(), "javascript-html-insertion");
-    if ((property === "query" || property === "execute" || property === "raw" || /\.(?:query|execute|raw)$/.test(api)) && input.dynamic && (input.sql || input.trace.length)) add(node, input, "sql-interpolation", "Potential SQL injection", "CWE-89",
+    if ((property === "query" || property === "execute" || property === "raw" || /\.(?:query|execute|raw)$/.test(api)) && input.dynamic && !input.sqlValueSafe && (input.sql || input.trace.length)) add(node, input, "sql-interpolation", "Potential SQL injection", "CWE-89",
       "A dynamically constructed value reaches a database query operation. Parameter arguments do not protect SQL text that was already interpolated.", "Keep SQL syntax constant and pass values through the driver's bound parameter API. Allowlist identifiers that cannot be bound.", ["Confirm this method is a database API and inspect the driver's parameter convention.", "Verify any validation or query builder behavior outside this file."]);
     if ((api === "fetch" || /^axios(?:\.(?:get|post|put|delete|patch|request|head))?$/.test(api) || /^(?:https?|node:https?)\.(?:get|request)$/.test(api)) && input.trace.length) add(node, input, "javascript-ssrf", "Potential server-side request forgery", "CWE-918",
       "Externally influenced input reaches an outbound request destination.", "Allowlist destinations and protocols, block private/reserved addresses after DNS resolution, and validate every redirect. Prefer a fixed service endpoint.", ["Confirm this executes on a server; browser requests have a different threat boundary.", "Review DNS rebinding, redirects and any network policy outside this file."]);
@@ -167,6 +239,10 @@ export function analyzeJavaScript(source: string, language: "javascript" | "type
     if (/^jsonwebtoken\.verify$/.test(api) && args.some(v => v.props?.get("algorithms")?.props && [...v.props.get("algorithms")!.props!.values()].some(a => a.constant === "none"))) add(node, input, "javascript-jwt-none", "Unsigned JWT algorithm accepted", "CWE-347",
       "JWT verification explicitly permits the unsigned 'none' algorithm.", "Allowlist the intended signing algorithm and validate the signature, issuer, audience and expiry.", ["Confirm the deployed library's behavior and key configuration."]);
     if (/^(?:dompurify|isomorphic-dompurify)(?:\.default)?\.sanitize$/.test(api)) return {...input, htmlSafe: true};
+    // The built-in conversion returns a primitive number (or throws), so its
+    // string form cannot contribute arbitrary SQL syntax. Keep all provenance:
+    // this is not an HTML, shell, path or authorization sanitizer.
+    if (api === "Number" && numberBuiltinIntact && node.type !== "NewExpression") return {...input, constant: undefined, api: undefined, props: undefined, fn: undefined, closure: undefined, bound: undefined, bindTarget: undefined, array: undefined, methodName: undefined, sqlValueSafe: true};
     if (api === "require" && typeof input.constant === "string") return {dynamic: false, trace: [], api: input.constant.replace(/^node:/, "")};
     if (api === "URLSearchParams") return {...input, api: "url.searchparams"};
     if (api === "url.searchparams.get" || api === "url.searchparams.getAll") return callee.dynamic ? external(node, "URL query input enters the program") : fixed();
@@ -185,11 +261,11 @@ export function analyzeJavaScript(source: string, language: "javascript" | "type
       case "RegExpLiteral": return fixed();
       case "Identifier": {
         const bound = env.get(node.name); if (bound) return bound;
-        const globals: Record<string, string> = {eval: "eval", Function: "Function", fetch: "fetch", require: "require", URLSearchParams: "URLSearchParams", location: "browser.location", document: "document", window: "window", req: "request", request: "request", ctx: "context", context: "context", crypto: "crypto", child_process: "child_process", childProcess: "child_process", axios: "axios", fs: "fs", process: "process"};
+        const globals: Record<string, string> = {eval: "eval", Function: "Function", Number: "Number", fetch: "fetch", require: "require", URLSearchParams: "URLSearchParams", location: "browser.location", document: "document", window: "window", req: "request", request: "request", ctx: "context", context: "context", crypto: "crypto", child_process: "child_process", childProcess: "child_process", axios: "axios", fs: "fs", process: "process"};
         return {...unknown(), api: globals[node.name]};
       }
       case "TSAsExpression": case "TSTypeAssertion": case "TSNonNullExpression": case "TypeCastExpression": case "ParenthesizedExpression": case "AwaitExpression": return evaluate(node.expression || node.argument, env, depth + 1);
-      case "MemberExpression": case "OptionalMemberExpression": return readMember(evaluate(node.object, env, depth + 1), node.computed && node.property.type === "Identifier" ? undefined : keyOf(node.property), node);
+      case "MemberExpression": case "OptionalMemberExpression": return readMember(evaluate(node.object, env, depth + 1), propertyKey(node, env, depth + 1), node);
       case "TemplateLiteral": return join(...node.quasis.map((q: Ast) => ({...fixed(q.value.cooked ?? q.value.raw), sql: isSql(q.value.cooked ?? q.value.raw)})), ...node.expressions.map((n: Ast) => evaluate(n, env, depth + 1)));
       case "BinaryExpression": return join(evaluate(node.left, env, depth + 1), evaluate(node.right, env, depth + 1));
       case "LogicalExpression": {
@@ -207,33 +283,51 @@ export function analyzeJavaScript(source: string, language: "javascript" | "type
         mergeScopes(env, [yes, no]);
         return value;
       }
-      case "ArrayExpression": {const props = new Map<string, Value>(); node.elements.forEach((n: Ast, i: number) => props.set(String(i), evaluate(n, env, depth + 1))); return {...join(...props.values()), props};}
+      case "ArrayExpression": {
+        const props = new Map<string, Value>(); let index = 0, exact = true;
+        for (const element of node.elements) {
+          const value = evaluate(element?.type === "SpreadElement" ? element.argument : element, env, depth + 1);
+          if (element?.type === "SpreadElement") {
+            if (value.array && value.props) for (const item of value.props.values()) props.set(String(index++), item);
+            else {props.set(String(index++), value); exact = false;}
+          } else props.set(String(index++), value);
+        }
+        return {...join(...props.values()), props, array: exact};
+      }
       case "ObjectExpression": {
-        const props = new Map<string, Value>();
+        const props = new Map<string, Value>(); const values: Value[] = [];
         for (const property of node.properties) {
-          if (property.type === "SpreadElement") {const spread = evaluate(property.argument, env, depth + 1); for (const [key, value] of spread.props || []) props.set(key, value); continue;}
-          const key = keyOf(property.key); const value = property.type === "ObjectMethod" ? functionValue(property, env) : evaluate(property.value, env, depth + 1);
-          if (key) props.set(key, value);
+          if (property.type === "SpreadElement") {const spread = evaluate(property.argument, env, depth + 1); values.push(spread); if (!spread.props) props.clear(); for (const [key, value] of spread.props || []) props.set(key, value); continue;}
+          const key = propertyKey(property, env, depth + 1); const value = property.type === "ObjectMethod" ? functionValue(property, env) : evaluate(property.value, env, depth + 1);
+          values.push(value);
+          if (key !== undefined) props.set(key, value); else props.clear();
           if (key === "rejectUnauthorized" && value.constant === false) add(property, fixed(), "javascript-tls-verification", "Certificate verification disabled", "CWE-295",
             "A TLS-shaped option disables certificate validation.", "Keep certificate verification enabled and configure the intended trust store.", ["Confirm that this object reaches a TLS client."], {severity: "medium"});
         }
-        return {...join(...props.values()), props};
+        return {...join(...values), props};
       }
       case "FunctionExpression": case "ArrowFunctionExpression": return functionValue(node, env);
       case "AssignmentExpression": {
         const right = evaluate(node.right, env, depth + 1); const value = node.operator === "=" ? right : join(evaluate(node.left, env, depth + 1), right);
         if (members.has(node.left.type)) {
-          const key = node.left.computed && node.left.property.type === "Identifier" ? undefined : keyOf(node.left.property);
+          const key = propertyKey(node.left, env, depth + 1);
           if (key === "innerHTML" || key === "outerHTML") htmlSink(node, value, key === "innerHTML" ? "javascript-innerhtml" : "javascript-html-insertion", key === "innerHTML" && !node.left.computed && node.operator === "=" ? node.left.property : undefined);
           const object = evaluate(node.left.object, env, depth + 1);
           if (key === "href" && object.api === "browser.location" && value.trace.length) add(node, value, "javascript-open-redirect", "Potential client-side open redirect", "CWE-601", "Untrusted input reaches a browser navigation destination.", "Allowlist same-origin routes and reject protocol-relative or external URLs.", ["Inspect destination validation and the browser's URL interpretation."]);
           if (key && node.left.object.type === "Identifier") {const prior = env.get(node.left.object.name) || unknown(); const props = new Map(prior.props); props.set(key, step(value, node, "assignment", "Value is assigned to an object property")); env.set(node.left.object.name, {...prior, props});}
+          else if (!key && node.left.object.type === "Identifier") {const prior = env.get(node.left.object.name) || unknown(); env.set(node.left.object.name, {...join(prior, value), props: undefined});}
         } else bind(node.left, value, env, false, depth + 1);
         return value;
       }
       case "CallExpression": case "OptionalCallExpression": case "NewExpression": {
         const callee = evaluate(node.callee, env, depth + 1);
-        const args = node.arguments.map((argument: Ast) => evaluate(argument.type === "SpreadElement" ? argument.argument : argument, env, depth + 1));
+        const args: Value[] = [];
+        for (const argument of node.arguments) {
+          const value = evaluate(argument.type === "SpreadElement" ? argument.argument : argument, env, depth + 1);
+          if (argument.type !== "SpreadElement") args.push(value);
+          else if (value.array && value.props) args.push(...value.props.values());
+          else args.push({...value, uncertainSpread: true});
+        }
         return checkCall(node, callee, args, env, depth + 1);
       }
       case "TaggedTemplateExpression": return join(evaluate(node.quasi, env, depth + 1), unknown());
@@ -265,7 +359,7 @@ export function analyzeJavaScript(source: string, language: "javascript" | "type
           }
           break;
         }
-        case "VariableDeclaration": for (const declaration of node.declarations) bind(declaration.id, declaration.init ? evaluate(declaration.init, env, depth + 1) : unknown(), env, true, depth + 1); break;
+        case "VariableDeclaration": for (const declaration of node.declarations) bind(declaration.id, declaration.init ? evaluate(declaration.init, env, depth + 1) : unknown(), env, true, depth + 1, node.kind === "const"); break;
         case "ExpressionStatement": evaluate(node.expression, env, depth + 1); break;
         case "ReturnStatement": result = join(result, evaluate(node.argument, env, depth + 1)); break;
         case "ThrowStatement": evaluate(node.argument, env, depth + 1); break;
@@ -282,6 +376,7 @@ export function analyzeJavaScript(source: string, language: "javascript" | "type
         case "BlockStatement": result = join(result, statements(node.body, new Scope(env), depth + 1)); break;
         case "IfStatement": {
           evaluate(node.test, env, depth + 1); const yes = env.flatten(), no = env.flatten();
+          for (const [name, value] of literalGuard(node.test)) if (yes.isImmutable(name)) yes.set(name, value);
           result = join(result, statements(node.consequent.type === "BlockStatement" ? node.consequent.body : [node.consequent], new Scope(yes), depth + 1), node.alternate ? statements(node.alternate.type === "BlockStatement" ? node.alternate.body : [node.alternate], new Scope(no), depth + 1) : fixed());
           mergeScopes(env, [yes, no]); break;
         }
@@ -289,7 +384,7 @@ export function analyzeJavaScript(source: string, language: "javascript" | "type
           const original = env.flatten(), loop = env.flatten();
           if (node.init?.type === "VariableDeclaration") statements([node.init], loop, depth + 1); else if (node.init) evaluate(node.init, loop, depth + 1);
           const iterated = node.right ? evaluate(node.right, loop, depth + 1) : unknown();
-          if (node.left?.type === "VariableDeclaration") for (const declaration of node.left.declarations) bind(declaration.id, iterated, loop, true, depth + 1);
+          if (node.left?.type === "VariableDeclaration") for (const declaration of node.left.declarations) bind(declaration.id, iterated, loop, true, depth + 1, node.left.kind === "const");
           else if (node.left) bind(node.left, iterated, loop, false, depth + 1);
           for (let i = 0; i < 2; i++) {evaluate(node.test, loop, depth + 1); result = join(result, statements(node.body?.type === "BlockStatement" ? node.body.body : [node.body], new Scope(loop), depth + 1)); if (node.update) evaluate(node.update, loop, depth + 1);}
           mergeScopes(env, [original, loop]); break;
