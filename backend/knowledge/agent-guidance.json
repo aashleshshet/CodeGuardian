@@ -1,0 +1,20 @@
+[
+  {
+    "id": "CWE-22",
+    "title": "Path traversal",
+    "url": "https://cwe.mitre.org/data/definitions/22.html",
+    "guidance": "Resolve user-selected paths against an approved root and enforce containment after canonicalization. Prefer server-owned identifiers over raw paths. Account for symlinks and file-system races. Test encoded traversal, absolute paths and legitimate files; checking a substring or removing one occurrence of dot-dot is not sufficient."
+  },
+  {
+    "id": "CWE-918",
+    "title": "Server-side request forgery",
+    "url": "https://cwe.mitre.org/data/definitions/918.html",
+    "guidance": "Limit outbound requests to approved destinations and protocols. Validate resolved addresses and redirect destinations, and enforce network egress restrictions. Review DNS changes and access to private, loopback, link-local and metadata services. A user-controlled URL alone does not establish that a protected destination is reachable."
+  },
+  {
+    "id": "CWE-601",
+    "title": "Open redirect",
+    "url": "https://cwe.mitre.org/data/definitions/601.html",
+    "guidance": "Prefer fixed application-owned redirect targets or map opaque identifiers to approved locations. Parse and validate the final destination against the expected origin or explicit allowlist. Test scheme-relative URLs, encoded separators and lookalike hosts. A prefix check on an unparsed URL is insufficient."
+  }
+]

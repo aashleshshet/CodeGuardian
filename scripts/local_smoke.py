@@ -24,7 +24,7 @@ def smoke():
             headers["X-CSRF-Token"] = csrf
         data = payload if isinstance(payload, bytes) else json.dumps(payload).encode() if payload is not None else None
         req = urllib.request.Request(base + "/api/backend" + path, data=data, method=method, headers=headers)
-        with opener.open(req, timeout=235 if path.endswith("/explanation") else 60) as response:
+        with opener.open(req, timeout=235 if path.endswith(("/explanation", "/agent")) else 60) as response:
             return json.load(response)
 
     assert request("/ready")["status"] == "ready"
@@ -72,6 +72,16 @@ def smoke():
         assert generated["provider"] == "llm" and generated["explanation"].strip()
         assert generated["classification"] == finding["classification"] and generated["citations"]
         model_result = {"model": generated["model"], "citations": [c["id"] for c in generated["citations"]]}
+    rag_path = f"/scans/{scan_id}/findings/{finding['fingerprint']}/agent"
+    retrieval = request(rag_path, "POST", {"question": "How should I fix this?", "use_model": False})
+    assert retrieval["provider"] == "curated_retrieval" and retrieval["citations"][0]["id"] == "CWE-89"
+    if caps["llm"]:
+        print("Requesting a cited answer from the local RAG agent.", flush=True)
+        answer = request(rag_path, "POST", {"question": "How should I fix this SQL injection finding?", "use_model": True})
+        assert answer["provider"] == "local_llm" and answer["answer"].strip()
+        assert answer["classification"] == finding["classification"] and answer["citations"]
+        assert "cg_fixture_not_a_real_credential" not in json.dumps(answer)
+        model_result["rag_citations"] = [citation["id"] for citation in answer["citations"]]
     # Re-authentication must preserve stored scan results.
     request("/auth/logout", "POST")
     csrf = ""
@@ -82,7 +92,7 @@ def smoke():
     (ROOT / ".cache/local/smoke-result.json").write_text(json.dumps(evidence, indent=2))
     request(f"/repositories/{scan['repository_id']}", "DELETE")
     request("/auth/logout", "POST")
-    print("Verified local authentication, persisted results, five isolated scanners, redaction and curated explanations. Test repository removed.")
+    print("Verified local authentication, persisted results, five isolated scanners, redaction, curated explanations and the RAG agent. Test repository removed.")
 
 
 if __name__ == "__main__":

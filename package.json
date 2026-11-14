@@ -9,7 +9,7 @@
     "start": "next start --hostname 0.0.0.0",
     "typecheck": "tsc --noEmit",
     "test:e2e": "playwright test",
-    "test:browser-analysis": "node --experimental-strip-types --test scripts/test-browser-analysis.mjs scripts/test-javascript-analysis.mjs scripts/test-python-analysis.mjs scripts/test-flow-benchmark.mjs",
+    "test:browser-analysis": "node --experimental-strip-types --test scripts/test-browser-analysis.mjs scripts/test-javascript-analysis.mjs scripts/test-python-analysis.mjs scripts/test-flow-benchmark.mjs scripts/test-parallel-motion.mjs",
     "benchmark:analysis": "node --experimental-strip-types scripts/benchmark-browser-analysis.mjs"
   },
   "dependencies": {

@@ -349,6 +349,15 @@ The public checker uses equal-width source and evidence panes in one 620px deskt
 
 Selected navigation and appearance controls use a sliding glass capsule. Severity filters, source language and finding indicators use the same pill geometry. A selected finding has a check icon; a selected evidence step emphasizes its line capsule. Keyboard focus remains an independent visible outline.
 
-Liquid-glass chrome uses 24–28px backdrop blur, translucent sage surfaces and fine highlights. A broad static Gaussian blur supplies subtle depth behind the top chrome; source remains opaque and crisp. The workbench arrives once with a short blur-to-focus transition, and the scanning line moves only while analysis is running. Reduced motion disables animations and transitions. Reduced transparency and missing backdrop-filter support use opaque surfaces.
+Liquid-glass chrome uses 24–28px backdrop blur, translucent sage surfaces and fine highlights. A broad static Gaussian blur supplies subtle depth behind the top chrome; source remains opaque and crisp. Gaussian backdrop blur is static. Large code and result surfaces are never blurred during transitions. Small selection indicators and evidence entrances move independently, and the scanning line moves only while analysis is running. Reduced motion disables animations and transitions. Reduced transparency and missing backdrop-filter support use opaque surfaces.
 
 Keep the interface minimal: one source action, explicit evidence labels, no simulated scan progress, invented findings or security scores. Selection and theme changes never alter analysis results or the human patch-review gate.
+
+
+## Independent motion and RAG review (2026-11-14)
+
+Motion uses application-owned spring tracks coordinated in one requestAnimationFrame loop. Retargeting retains position and velocity; no interaction waits for another animation. Geometry is read on selection or resize and only transforms are updated during pill motion. There are no React updates per frame. Channels stop at rest, cancel on unmount, and settle immediately when the page is hidden or reduced motion is requested. This behavior is inspired by OxygenOS parallel interaction, not a OnePlus SDK integration.
+
+Navigation, appearance, severity and finding selections share the same moving glass capsule. Hit targets remain stationary, focus outlines remain separate, and primary actions have a small press/release spring. Header and workbench share an outer edge; evidence summary spacing is compact. Touch pointers receive larger control targets.
+
+The authenticated review pane includes a Security agent conversation scoped to the current finding. Retrieved guidance and model interpretation are visibly distinct, cited excerpts are expandable, generation can be cancelled, and the panel offers a no-model retrieval mode. Model requests never block unrelated controls. Conversations reset with the finding and never imply a verified exploit or automatically apply a fix.

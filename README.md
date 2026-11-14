@@ -6,7 +6,7 @@ CodeGuardian analyzes authorized Python, JavaScript, and TypeScript repositories
 
 **Check code immediately:** open the [website](https://codeguardianxweb.vercel.app), paste Python, JavaScript or TypeScript, or choose a source file up to 200 KiB. No account or GitHub connection is needed. The public checker parses source and follows selected input flows in a browser worker, displays redacted line-level findings and source-to-sink traces, and exports reports or human-reviewed patch suggestions. It never submits source to a server. These quick checks do not run Semgrep, Bandit, dependency scanners or an AI model; they are not a complete security audit.
 
-**Run the full scanners on your device:** the [local setup guide](docs/local.md) starts the entire application at `http://localhost:3000/workspace`, with local access-key authentication and ZIP uploads. No Oracle account, GitHub App or cloud backend is required. Use the dedicated local Docker stack to keep source and scan results on your machine. Optional Qwen2.5-Coder explanations run through Ollama inside the private local network.
+**Run the full scanners on your device:** the [local setup guide](docs/local.md) starts the entire application at `http://localhost:3000/workspace`, with local access-key authentication and ZIP uploads. No Oracle account, GitHub App or cloud backend is required. Use the dedicated local Docker stack to keep source and scan results on your machine. Optional Qwen2.5-Coder explanations and the finding-scoped RAG agent run through Ollama inside the private local network.
 
 [Website](https://codeguardianxweb.vercel.app) · [Deployment](docs/deployment.md) · [Architecture](docs/architecture.md) · [Security model](SECURITY.md) · [Verification](docs/verification.md)
 
@@ -24,10 +24,10 @@ CodeGuardian analyzes authorized Python, JavaScript, and TypeScript repositories
 - **Semgrep, Bandit, Gitleaks, OSV-Scanner and Trivy** process integrations. OSV and Trivy consume administrator-provisioned offline databases. Scanner subprocesses run in network-disabled Docker containers with CPU, memory, process, file-size and wall-clock limits.
 - Normalized findings, stable fingerprints, relevant CWE/OWASP mappings, secret redaction, dependency/advisory references, durable first/last seen and triage history.
 - Monaco source review and side-by-side patch diffs; severity, scanner, status, filename and first-seen filtering; grounded explanations; human acknowledgement before patch export.
-- Optional local Ollama/OpenAI-compatible generation with retrieved trusted guidance, strict output schema and grounded advisory identifiers. Static analysis works without an LLM.
+- A finding-scoped [RAG security agent](docs/rag-agent.md): local BM25 retrieval with CWE matching, cited answers, review conditions, explicit abstention when guidance is missing, and optional Ollama/OpenAI-compatible generation. Static analysis and retrieved guidance work without an LLM.
 - Signed/idempotent GitHub webhooks, opt-in push and same-repository PR scans, scheduled scans, optional GitHub check summaries and an explicit blocking policy.
 - Persisted dashboard counts, scan history, commit comparison, notifications, JSON/SARIF/Markdown reports, data deletion and retention maintenance.
-- Obsidian/sage interface, liquid-glass navigation and onboarding, purposeful motion, dark/light themes, reduced-motion support and responsive layouts.
+- Obsidian/sage interface with liquid-glass chrome, independent interruptible spring animations, moving selection capsules, dark/light themes, reduced-motion support and responsive layouts.
 
 ## Evidence contract
 
@@ -92,7 +92,10 @@ flowchart LR
     W --> S[Offline restricted scanner container]
     C[Administrator-updated databases] -->|read-only| S
     S -->|redacted results| P
-    A -->|optional redacted context| L[Configured LLM]
+    A --> K[Bounded RAG agent]
+    D[Reviewed local CWE guidance] -->|ranked retrieval| K
+    K -->|optional redacted context| L[Configured LLM]
+    L -->|validated cited answer| K
     B[Celery Beat] --> R
 ```
 

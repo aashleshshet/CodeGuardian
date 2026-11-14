@@ -55,7 +55,9 @@ The provisioning container downloads the official Ollama image and the [986 MB m
 
 In **Code review**, select a finding and click **Explain with configured AI**. The API supplies limited redacted evidence and trusted CWE guidance. It validates structured output, citation IDs and the original classification before saving the response. The panel identifies the model and prompts the reviewer to verify its suggestions.
 
-`local_setup.py smoke` exercises a real model explanation when AI is enabled. `local_setup.py disable-ai` stops inference and retains the weights for future use. The original scanner findings and curated explanations remain available.
+The **Security agent** panel in the same finding view answers questions about evidence, fixes and regression tests. Keep **Use local model** enabled for an Ollama-generated answer, or turn it off for retrieved guidance. Expand each cited source to see the excerpt used. Questions and answers are transient and are cleared when changing findings. The agent never applies a change. See [RAG behavior and limits](rag-agent.md).
+
+`local_setup.py smoke` exercises a real model explanation and a cited RAG answer when AI is enabled. `local_setup.py disable-ai` stops inference and retains the weights for future use. The original scanner findings and curated explanations remain available.
 
 ## Troubleshooting
 

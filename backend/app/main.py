@@ -20,6 +20,7 @@ from .jobs import audit
 from .scanner import compare
 from .redaction import redact, redact_tree
 from .ai import explain, propose_patch
+from .rag import answer_question
 from . import github
 from .middleware import BodyLimitMiddleware
 from .limits import check_limit
@@ -174,6 +175,28 @@ def explanation(scan_id: str, fingerprint: str, body: ExplainRequest, user: User
     except (ValueError, httpx.HTTPError): raise HTTPException(502, "AI explanation unavailable. Curated remediation remains available.") from None
     db.add(AIAnalysis(scan_id=scan.id, fingerprint=fingerprint, provider=result["provider"], result=result))
     audit(db, user.id, "finding.explained", fingerprint)
+    db.commit()
+    return result
+
+
+class AgentQuestion(BaseModel):
+    question: str = Field(min_length=3, max_length=3000)
+    use_model: bool = False
+
+
+@app.post("/scans/{scan_id}/findings/{fingerprint}/agent")
+def ask_agent(scan_id: str, fingerprint: str, body: AgentQuestion, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    scan, _ = owned_scan(scan_id, user, db)
+    finding = finding_for(scan, fingerprint)
+    if not body.question.strip():
+        raise HTTPException(422, "Enter a question about this finding.")
+    check_limit(user.id, "llm" if body.use_model else "rag", 5 if body.use_model else 30)
+    try:
+        result = answer_question(finding, body.question, retained_source(scan).get(finding["path"], ""), body.use_model)
+    except (ValueError, httpx.HTTPError):
+        raise HTTPException(502, "The agent could not produce a grounded answer. Retry with model generation turned off for retrieved guidance.") from None
+    # Questions and generated answers are transient; audit only the finding identity.
+    audit(db, user.id, "finding.agent_answered", fingerprint)
     db.commit()
     return result
 

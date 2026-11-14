@@ -57,6 +57,15 @@ test("real scanner evidence, Monaco, review persistence, human patch gate, repor
  await expect(page.getByRole("heading",{name:"AI explanation",exact:true})).toBeVisible();
  await expect(page.getByText(generatedText,{exact:true})).toHaveCount(1);
  await expect(page.locator(".detail-message")).toHaveText(analyzerMessage);
+ const agent = page.getByRole("region", {name:"Security RAG agent"});
+ await agent.getByLabel("Use configured model", {exact:true}).uncheck();
+ await agent.getByRole("button", {name:"How should I fix this?",exact:true}).click();
+ await expect(agent).toContainText("Sources used");
+ await expect(agent).toContainText("CWE-89");
+ await expect(agent.getByRole("link", {name:"Read source"})).toHaveCount(0);
+ await agent.locator("summary").filter({hasText:"CWE-89"}).first().click();
+ await expect(agent.getByRole("link", {name:"Read source"}).first()).toHaveAttribute("href", "https://cwe.mitre.org/data/definitions/89.html");
+ await agent.screenshot({path:".cache/screenshots/rag-agent.png",animations:"disabled"});
  await page.evaluate(()=>window.scrollTo(0,0));await page.screenshot({path:".cache/screenshots/review-dark.png",fullPage:false,animations:"disabled"});await page.getByRole("button",{name:"Confirm",exact:true}).click();await expect(page.getByText("Finding confirmed. Review saved.",{exact:true})).toBeVisible();await page.reload();await inbox.first().click();await expect(page.getByRole("button",{name:"Reopen",exact:true})).toBeVisible();
  await page.locator(".inbox-finding").filter({hasText:"receipt.ts"}).click();await page.getByRole("button",{name:"Review suggested patch",exact:true}).click();const exportPatch=page.getByRole("button",{name:"Export reviewed patch",exact:true});await expect(exportPatch).toBeDisabled();await page.getByLabel("I reviewed this diff and will test it before use.").check();await expect(exportPatch).toBeEnabled();const patchDownload=page.waitForEvent("download");await exportPatch.click();expect((await patchDownload).suggestedFilename()).toBe("codeguardian.patch");
  await page.getByRole("button",{name:"Switch to light theme"}).click();await page.evaluate(()=>window.scrollTo(0,0));await page.screenshot({path:".cache/screenshots/patch-light.png",fullPage:false,animations:"disabled"});await page.getByRole("button",{name:"Reports",exact:true}).click();const reportDownload=page.waitForEvent("download");await page.getByRole("button",{name:"Export JSON",exact:true}).click();expect((await reportDownload).suggestedFilename()).toContain("codeguardian-");

@@ -30,6 +30,25 @@ def test_mutations_require_csrf(authenticated):
     assert authenticated.post("/auth/logout").status_code == 403
 
 
+def test_agent_uses_owned_evidence_and_requires_csrf(authenticated):
+    scan = seed(authenticated)
+    finding = next(f for f in scan.findings if f["cwe"] == "CWE-89")
+    url = f"/scans/{scan.id}/findings/{finding['fingerprint']}/agent"
+    answer = authenticated.post(url, json={"question": "How should I fix this?"})
+    assert answer.status_code == 200
+    result = answer.json()
+    assert result["provider"] == "curated_retrieval"
+    assert result["citations"][0]["id"] == "CWE-89"
+    assert result["classification"] == finding["classification"]
+    assert authenticated.post(url, json={"question": " " * 3}).status_code == 422
+    assert authenticated.post(url, json={"question": "x" * 3001}).status_code == 422
+    assert authenticated.post(url.replace(scan.id, "other-scan"), json={"question": "Explain this finding"}).status_code == 404
+    authenticated.headers.pop("X-CSRF-Token")
+    assert authenticated.post(url, json={"question": "Explain this finding"}).status_code == 403
+    authenticated.cookies.clear()
+    assert authenticated.post(url, json={"question": "Explain this finding"}).status_code == 401
+
+
 def test_tenant_isolation(authenticated):
     scan = seed(authenticated)
     assert authenticated.get(f"/scans/{scan.id}").status_code == 200

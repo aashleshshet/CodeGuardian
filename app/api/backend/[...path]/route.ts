@@ -28,7 +28,7 @@ async function proxy(request: NextRequest, context: {params: Promise<{path: stri
     body = new Uint8Array(size); let offset = 0; for (const chunk of chunks) {body.set(chunk, offset); offset += chunk.byteLength;}
   }
   try {
-    const localInference = process.env.LOCAL_MODEL_ENABLED === "true" && path.at(-1) === "explanation";
+    const localInference = process.env.LOCAL_MODEL_ENABLED === "true" && ["explanation", "agent"].includes(path.at(-1) || "");
     const result = await fetch(url, {method: request.method, headers, body: body as BodyInit | undefined, redirect: "manual", cache: "no-store", signal: AbortSignal.timeout(localInference ? 225_000 : 55_000)});
     const outgoing = new Headers({"Cache-Control": "no-store"});
     for (const key of ["content-type", "location", "content-disposition", "retry-after", "x-request-id"]) {const value = result.headers.get(key); if (value) outgoing.set(key, value);}

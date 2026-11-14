@@ -122,3 +122,39 @@ test("checker adapts across themes and viewport sizes", async ({page}) => {
     await page.screenshot({path: `.cache/screenshots/checker-${name}.png`, fullPage: true, animations: "disabled"});
   }
 });
+
+test("parallel selections accept rapid input and settle on the latest state", async ({page}) => {
+  await page.goto("/");
+  await page.getByRole("button", {name:"Load example", exact:true}).click();
+  await page.getByRole("button", {name:"Check code", exact:true}).click();
+  await expect(page.getByTestId("checker-results")).toBeVisible();
+  // Native dispatch bypasses Playwright's stability wait: interruptions are deliberate.
+  await page.evaluate(async () => {
+    const click = (label: string) => document.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)!.click();
+    for (let i=0; i<8; i++) {
+      click(i%2 ? "Switch to dark theme" : "Switch to light theme");
+      click(i%2 ? "All severities" : "Low severity");
+      await new Promise(requestAnimationFrame);
+    }
+    click("Switch to light theme"); click("High severity");
+  });
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+  const filters=page.getByRole("group", {name:"Filter severity"});
+  await expect(filters.locator('[aria-pressed="true"]')).toHaveCount(1);
+  await expect(filters.getByRole("button", {name:"High severity"})).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByTestId("checker-results")).not.toContainText("No findings at this severity.");
+  const aligned = async () => page.evaluate(() => [...document.querySelectorAll<HTMLElement>('[data-motion-ready="true"]')].every(group => {
+    const selected=group.querySelector<HTMLElement>('[data-motion-item][aria-pressed="true"], [data-motion-item][aria-current]');
+    const pill=group.querySelector<HTMLElement>('[data-motion-indicator]');
+    if(!selected || !pill) return true;
+    const a=selected.getBoundingClientRect(), b=pill.getBoundingClientRect();
+    return Math.abs(a.x-b.x)<1 && Math.abs(a.y-b.y)<1 && Math.abs(a.width-b.width)<1 && Math.abs(a.height-b.height)<1;
+  }));
+  await expect.poll(aligned).toBe(true);
+  await page.setViewportSize({width:390,height:844});
+  await expect.poll(aligned).toBe(true);
+  await page.emulateMedia({reducedMotion:"reduce"});
+  await filters.getByRole("button", {name:"All severities"}).dispatchEvent("click");
+  await expect.poll(aligned).toBe(true);
+  await expect(page.locator('[data-motion-running="true"]')).toHaveCount(0);
+});

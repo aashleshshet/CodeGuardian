@@ -1,5 +1,15 @@
 # Verification record
 
+## Parallel motion and local RAG agent — 2026-11-14
+
+The frontend uses application-owned spring tracks inspired by interruptible parallel interactions. It does not embed a OnePlus/OxygenOS SDK. Seven motion tests verify momentum retention, independent tracks, shared frame scheduling, cleanup, reduced motion, hidden tabs and long-frame stability. A 90-frame local Chromium sample during rapid theme/filter switching recorded no frame intervals over 34 ms (95th percentile 19.1 ms); this is a local diagnostic, not a cross-device frame-rate guarantee. No browser page errors were observed.
+
+All 93 browser-analysis/motion unit tests, ten browser regression scenarios, TypeScript and the production build pass. All five public-checker scenarios also pass against the running local production container. The backend suite reports 107 passing tests and one skipped optional five-scanner integration; the real local Docker smoke separately ran all five scanners successfully with 86 findings from the owned fixture.
+
+The smoke used actual Ollama `qwen2.5-coder:1.5b` for both the existing explanation and the new finding-scoped RAG answer. Both returned CWE-89 citations with unchanged evidence classification. The temporary repository was removed afterward. Retrieval tests cover topic anchoring and abstention, and API tests cover authentication, ownership, CSRF and request bounds. Model contract tests cover redaction, untrusted context, unknown citations/identifiers, malformed output and unsupported claims. These checks do not prove arbitrary model prose correct.
+
+The RAG service is available in the on-device `/workspace`; the public Vercel checker remains browser-only and does not send source to the private model. See [RAG operation and limits](rag-agent.md).
+
 ## Syntax and input-flow upgrade — 2026-11-14
 
 The public checker now uses pinned Babel and Lezer parsers with application-owned bounded single-file analysis. Findings distinguish traced input flows, structural risks with unconfirmed input origins, and credential patterns. Line-level evidence traces, CWE/OWASP mappings and explicit partial-analysis states are visible in the interface. Source stays in the browser.

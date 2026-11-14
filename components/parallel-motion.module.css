@@ -1,0 +1,10 @@
+.selection {position:relative; isolation:isolate}
+.selection>[data-motion-item] {position:relative; z-index:1}
+.indicator {
+  position:absolute; left:0; top:0; z-index:0; pointer-events:none;
+  opacity:0; transform-origin:0 0; border-radius:999px;
+  border:1px solid var(--cg-glass-edge); background:var(--cg-selected);
+  background-image:linear-gradient(165deg,#ffffff0c,#ffffff00);
+  box-shadow:0 3px 10px var(--cg-shadow),inset 0 1px 0 #ffffff0b;
+}
+@media (prefers-reduced-transparency:reduce) {.indicator {background:var(--cg-raised); background-image:none}}
