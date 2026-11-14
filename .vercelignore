@@ -1,7 +1,12 @@
 .venv
 .cache
-# Exclude the Python service, but retain app/api/backend (the Next.js proxy).
-/backend/
+# Keep only the reviewed JSON corpus shared with browser RAG.
+# app/api/backend (the Next.js proxy) is independent of the Python service.
+/backend/*
+!/backend/knowledge/
+/backend/knowledge/*
+!/backend/knowledge/guidance.json
+!/backend/knowledge/agent-guidance.json
 fixtures
 scripts
 tests
