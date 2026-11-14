@@ -22,8 +22,13 @@ test("public code checks need no account and keep source on the device", async (
   await expect(page.getByLabel("Evidence trace", {exact:true})).toBeVisible();
   await page.getByRole("button", {name:/Show source at line/}).first().click();
   await expect(results.getByRole("button").first()).toBeVisible();
-  await page.getByLabel("Filter severity", {exact: true}).selectOption("high");
-  await page.getByLabel("Filter severity", {exact: true}).selectOption("all");
+  const filters = page.getByRole("group", {name: "Filter severity", exact: true});
+  await filters.getByRole("button", {name: "High severity", exact: true}).click();
+  await expect(filters.getByRole("button", {name: "High severity", exact: true})).toHaveAttribute("aria-pressed", "true");
+  await filters.getByRole("button", {name: "Low severity", exact: true}).click();
+  await expect(results).toContainText("No findings at this severity.");
+  await filters.getByRole("button", {name: "All severities", exact: true}).click();
+  await expect(results).not.toContainText("No findings at this severity.");
   await page.evaluate(()=>window.scrollTo(0,0));
   await page.screenshot({path: ".cache/screenshots/checker-results-dark.png", fullPage: true, animations: "disabled"});
 
@@ -101,8 +106,15 @@ test("checker adapts across themes and viewport sizes", async ({page}) => {
   await page.screenshot({path: ".cache/screenshots/checker-desktop.png", fullPage: true, animations: "disabled"});
   await page.getByRole("button", {name: "Switch to light theme", exact: true}).click();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+  await expect(page.getByRole("button", {name: "Switch to light theme", exact: true})).toHaveAttribute("aria-pressed", "true");
   await page.screenshot({path: ".cache/screenshots/checker-light.png", fullPage: true, animations: "disabled"});
   await page.getByRole("button", {name: "Switch to dark theme", exact: true}).click();
+  const navigation=page.getByRole("navigation", {name:"Main navigation"});
+  await navigation.getByRole("link", {name:"How it works", exact:true}).click();
+  await expect(navigation.getByRole("link", {name:"How it works", exact:true})).toHaveAttribute("aria-current", "location");
+  await navigation.getByRole("link", {name:"Code checker", exact:true}).click();
+  await expect(navigation.getByRole("link", {name:"Code checker", exact:true})).toHaveAttribute("aria-current", "location");
+  await page.evaluate(()=>window.scrollTo(0,0));
   for (const [width, height, name] of [[768, 1024, "tablet"], [390, 844, "mobile"]] as const) {
     await page.setViewportSize({width, height});
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);

@@ -199,7 +199,7 @@ This is an extraction of `app/globals.css`, the shipped components, and the desk
 
 - Dense, task-focused layouts with clear reading order.
 - Quiet neutral structure with sage actions and semantic severity colors.
-- One-pixel selection edges on navigation, tabs, and the finding inbox.
+- Pill selections on navigation, tabs and filters; explicit check marks on the selected public finding.
 - Restrained glass chrome around opaque evidence surfaces.
 - Responsive review composition with labeled bottom navigation on phones.
 
@@ -228,7 +228,7 @@ The palette combines softly green-tinted neutrals with a sage primary accent and
 - **Reading hierarchy:** `text` carries primary content, `muted` supporting copy, and `quiet` metadata. Chart grid lines use `grid`; axes follow muted text.
 - **Glass:** `glass` is the existing alpha background used by chrome and the dialog; preserve its CSS color format.
 
-**The Selection Edge Rule.** Use the established one-pixel sage edge for active navigation, source tabs, and selected findings. Theme choices use an outlined selected state.
+**The Selection Pill Rule.** Active navigation, source tabs, severity filters and theme choices use a rounded capsule with a quiet sage wash and fine specular border. Public finding rows include a pill-shaped check indicator. Multi-line evidence cards retain a readable rounded rectangle; their selected line reference uses a capsule. Expose selection with `aria-current` or `aria-pressed`, not color alone.
 
 ## Typography
 
@@ -279,7 +279,7 @@ The top bar uses a backdrop blur of (22px) with saturation (125%); phone navigat
 
 ## Shapes
 
-The form language is softly rectangular. Tags have the smallest corners, then fields and controls, then settings containers and main panels; dialogs receive the largest established radius. Use the corresponding frontmatter shape role rather than introducing new radii. One-pixel borders and dividers carry most structure. Fully rounded shapes are reserved for small status dots and the user avatar.
+The form language is softly rectangular. Tags have the smallest corners, then fields and controls, then settings containers and main panels; dialogs receive the largest established radius. Use the corresponding frontmatter shape role rather than introducing new radii. One-pixel borders and dividers carry most structure. Fully rounded shapes identify interactive choices, selected states, severity badges and compact icon controls. Keep code and evidence regions rectangular inside their rounded outer frame.
 
 The source, inbox, and explanation areas share one clipped outer panel. Their internal edges are dividers, not separately rounded cards. Main action buttons are compact rectangles, and tabs use an edge indicator rather than filled capsules.
 
@@ -293,7 +293,7 @@ Secondary hover changes the background and border. Primary hover uses brightness
 
 ### Chips
 
-Severity chips combine a small status dot, readable label, semantic foreground, and a subdued wash. They are compact rounded rectangles, not interactive filter pills. Neutral tags use a thin border and muted text. Numeric count badges use mono type on a raised neutral surface.
+Severity chips combine a small status dot, readable label, semantic foreground, and a subdued wash. They are compact capsules; separate labeled severity filter buttons control the result list. Neutral tags use a thin border and muted text. Numeric count badges use mono type on a raised neutral surface.
 
 ### Cards / Containers
 
@@ -305,11 +305,11 @@ Search combines an outline icon, a compact text field, and an optional keyboard 
 
 ### Navigation
 
-Desktop navigation is an icon rail with accessible names and hover titles. The active item changes to sage and adds the thin edge marker; hover uses a raised neutral fill. Phone navigation exposes short labels under the icons. Source and dialog tabs use muted inactive text, primary active text, and the same thin sage underline. Preserve the sticky chrome geometry and content clearance.
+Desktop navigation is an icon rail with accessible names and hover titles. The active item changes to sage inside a softly filled capsule; hover uses a raised neutral fill. Phone navigation exposes short labels under the icons. Source tabs use muted inactive text and a sage capsule for the active choice; dialog controls retain their existing interaction semantics. Preserve the sticky chrome geometry and content clearance.
 
 ### Finding rows and review inbox
 
-Finding rows combine a readable title, mono source location, severity chip, analyzer evidence, and a trailing direction icon. Rows use thin dividers and a raised hover plane. The review inbox adapts that pattern into a compact selectable list; the current finding adds a raised plane and the sage edge. Keep severity distinct from evidence classification.
+Finding rows combine a readable title, mono source location, severity chip, analyzer evidence, and a trailing direction icon. Rows use thin dividers and a raised hover plane. The review inbox adapts that pattern into a compact selectable list; the current finding adds a raised plane and a fine sage border. Keep severity distinct from evidence classification.
 
 ### Dialog and feedback
 
@@ -328,7 +328,7 @@ The import dialog is the strongest glass surface, with a bounded width (570px), 
 
 ### Don't:
 
-- Don't replace the selection edge with filled pill tabs.
+- Don't rely on color alone to communicate selection; retain clear labels and accessible state.
 - Don't turn ordinary counts or metadata into a wall of status color.
 - Don't add glow, ambient panel shadows, or blurred backgrounds behind source evidence.
 - Don't shrink the established small text to fit additional columns; use the responsive column reductions.
@@ -336,8 +336,19 @@ The import dialog is the strongest glass surface, with a bounded width (570px), 
 
 ## Connected workspace upgrade (2026-11-06)
 
-The public surface is an honest sign-in/onboarding page, never a sample dashboard. The operated surface uses a 220px labeled navigation rail (icon rail on tablets; bottom navigation on mobile), actual persisted counts and explicit empty/error states. Preserve Public Sans and IBM Plex Mono, the obsidian/sage palette, and opaque source/evidence panels.
+The advanced `/workspace` surface opens with honest sign-in/onboarding, never a sample dashboard. The public `/` surface is the account-free code checker described below. The operated surface uses a 220px labeled navigation rail (icon rail on tablets; bottom navigation on mobile), actual persisted counts and explicit empty/error states. Preserve Public Sans and IBM Plex Mono, the obsidian/sage palette, and opaque source/evidence panels.
 
 Liquid glass is intentionally confined to navigation, notifications, confirmation overlays and the sign-in panel. It uses translucent surfaces, fine specular edges and restrained blur. A slow organic outline and an evidence-flow line connect the landing narrative; task controls use brief press/arrival feedback. All animation and transitions are disabled under `prefers-reduced-motion: reduce`. Never simulate scan progress or invent security scores.
 
 Primary responsive cutoffs: 1250, 1000 and 760px. Review columns collapse from finding list/source/evidence into two columns, then a vertical mobile flow. Source and diffs remain read-only; export requires human acknowledgement. The interface never offers a fake demo login, automatic repository mutation or an unavailable paid AI action.
+
+
+## Public checker and selection refinement (2026-11-14)
+
+The public checker uses equal-width source and evidence panes in one 620px desktop frame, with centered navigation and a shared 1320px content envelope. On tablets and phones the panes stack in source-then-evidence order. The public theme tokens live in `components/checker.module.css`; workspace tokens remain in `app/globals.css`.
+
+Selected navigation and appearance controls use a sliding glass capsule. Severity filters, source language and finding indicators use the same pill geometry. A selected finding has a check icon; a selected evidence step emphasizes its line capsule. Keyboard focus remains an independent visible outline.
+
+Liquid-glass chrome uses 24–28px backdrop blur, translucent sage surfaces and fine highlights. A broad static Gaussian blur supplies subtle depth behind the top chrome; source remains opaque and crisp. The workbench arrives once with a short blur-to-focus transition, and the scanning line moves only while analysis is running. Reduced motion disables animations and transitions. Reduced transparency and missing backdrop-filter support use opaque surfaces.
+
+Keep the interface minimal: one source action, explicit evidence labels, no simulated scan progress, invented findings or security scores. Selection and theme changes never alter analysis results or the human patch-review gate.

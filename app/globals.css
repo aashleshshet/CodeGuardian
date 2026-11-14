@@ -42,3 +42,118 @@
 
 /* Device-only access form follows the existing visual system. */
 .local-signin{display:grid;gap:10px;margin-top:24px}.local-signin label{font-size:12px;font-weight:600}.local-signin input{width:100%;padding:12px;border:1px solid var(--control);border-radius:7px;background:var(--surface);font-family:var(--font-mono)}.local-signin p{font-size:12px}.local-signin .local-login-error{color:var(--negative)}.local-signin .signin-button{margin-top:8px}.integrations-layout.local-sources{grid-template-columns:minmax(0,720px)}
+
+/* Shared workspace selections: pill geometry, quiet glass chrome, stable spacing. */
+.connected-shell .nav-rail,
+.connected-shell .topbar {
+  background: color-mix(in srgb, var(--ground) 84%, transparent);
+  -webkit-backdrop-filter: blur(28px) saturate(135%);
+  backdrop-filter: blur(28px) saturate(135%);
+}
+.connected-shell .topbar { box-shadow: 0 6px 24px #00000008; }
+.connected-shell .nav-rail nav { gap: 8px; }
+.connected-shell .nav-item {
+  min-height: 44px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  gap: 12px;
+  transition: background .22s var(--ease-out), border-color .22s var(--ease-out), color .22s var(--ease-out), box-shadow .22s var(--ease-out);
+}
+.connected-shell .nav-item.active {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 24%, transparent);
+  background: color-mix(in srgb, var(--accent-wash) 82%, transparent);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--text) 9%, transparent), 0 3px 10px #0000000a;
+}
+.connected-shell .nav-item.active::after { display: none; }
+.connected-shell .nav-item:hover:not(.active) { background: color-mix(in srgb, var(--raised) 88%, transparent); }
+.connected-shell .code-tabs {
+  height: 50px;
+  gap: 6px;
+  padding: 8px 12px;
+  background: var(--surface);
+}
+.connected-shell .code-tabs > button {
+  height: 32px;
+  min-width: 88px;
+  padding: 0 12px;
+  justify-content: center;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  transition: background .22s var(--ease-out), border-color .22s var(--ease-out), color .22s var(--ease-out);
+}
+.connected-shell .code-tabs > button.active {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 24%, transparent);
+  background: var(--accent-wash);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--text) 7%, transparent);
+}
+.connected-shell .code-tabs > button.active::after { display: none; }
+.connected-shell .code-tabs > button:hover:not(.active) { background: var(--raised); color: var(--text); }
+.connected-shell .theme-options {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ground) 82%, transparent);
+}
+.connected-shell .theme-options > .button {
+  min-width: 86px;
+  height: 34px;
+  border-radius: 999px;
+  border-color: transparent;
+  background: transparent;
+  color: var(--muted);
+}
+.connected-shell .theme-options > .button[aria-pressed=true] {
+  background: var(--accent-wash);
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 24%, transparent);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--text) 7%, transparent);
+}
+.connected-shell .theme-options > .button:hover { filter: none; color: var(--text); }
+.connected-shell .inbox-list { padding: 3px 7px 7px; }
+.connected-shell .inbox-finding {
+  width: 100%;
+  padding: 14px 12px;
+  margin-top: 5px;
+  border: 1px solid transparent;
+  border-radius: 16px;
+  transition: background .2s var(--ease-out), border-color .2s var(--ease-out);
+}
+.connected-shell .inbox-finding.selected {
+  background: var(--raised);
+  border-color: color-mix(in srgb, var(--accent) 32%, var(--border));
+}
+.connected-shell .inbox-finding.selected::after { display: none; }
+.connected-shell .severity,
+.connected-shell .reviewed-mark { border-radius: 999px; padding-inline: 9px; }
+.connected-shell .repository-choice > svg:first-child {
+  width: 32px;
+  height: 32px;
+  padding: 7px;
+  border-radius: 999px;
+  flex-shrink: 0;
+  margin-top: 0;
+}
+.connected-shell .repository-choice.selected > svg:first-child { color: var(--accent); background: var(--raised); }
+.connected-shell .repository-choice:hover { transform: none; }
+@media (max-width:1000px) and (min-width:761px) {
+  .connected-shell .nav-item { width: 48px; min-height: 44px; padding: 0; }
+}
+@media (max-width:760px) {
+  .connected-shell .nav-rail { padding: 5px 8px; height: 68px; box-shadow: 0 -8px 26px #0000000a; }
+  .connected-shell .nav-rail nav { gap: 4px; }
+  .connected-shell .nav-item { width: 19%; height: 54px; min-height: 54px; gap: 4px; padding: 6px 4px; font-size: 9px; }
+  .connected-shell .app-body { margin-bottom: 68px; }
+  .connected-shell .code-tabs { gap: 5px; padding-inline: 10px; }
+  .connected-shell .code-tabs > button { padding-inline: 11px; min-width: 78px; }
+  .connected-shell .theme-options > .button { min-width: 82px; }
+}
+@media (prefers-reduced-motion:reduce) {
+  .connected-shell .nav-item,
+  .connected-shell .code-tabs > button,
+  .connected-shell .inbox-finding { transition: none; }
+}
